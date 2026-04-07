@@ -7,3 +7,5 @@ router.post('/login', userController.login);
 router.get('/profile', authMiddleware, userController.getProfile);
 
 module.exports = router;
+
+// POST/api/users/login Para login con identificacion y password
