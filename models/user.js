@@ -21,7 +21,7 @@ const User = {
     const rows = await db.query(
       `SELECT id, nombre, email, password, rol_id, activo, identificacion
        FROM usuarios
-       WHERE TRIM(CAST(identificacion AS CHAR)) = TRIM(?)
+       WHERE identificacion = ?
        LIMIT 1`,
       [normalizedIdentificacion]
     );

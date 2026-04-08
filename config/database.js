@@ -83,15 +83,7 @@ class DbService {
         try {
             connection = await this.pool.getConnection();
             
-            // Convertir parámetros numéricos a enteros si es necesario
-            const processedParams = params.map(param => {
-                if (typeof param === 'string' && !isNaN(param) && param.trim() !== '') {
-                    return parseInt(param, 10);
-                }
-                return param;
-            });
-            
-            const [rows] = await connection.execute(sql, processedParams);
+            const [rows] = await connection.execute(sql, params);
             return rows;
         } catch (error) {
             console.error('❌ Error en consulta SQL:', error);
