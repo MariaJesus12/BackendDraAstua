@@ -3,14 +3,27 @@ const bcrypt = require('bcryptjs');
 
 const db = DbService.getInstance();
 
+function normalizeDbValue(value) {
+  if (value == null) {
+    return '';
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return value.toString('utf8');
+  }
+
+  return String(value);
+}
+
 const User = {
   async findByLogin(login) {
+    const normalizedLogin = normalizeDbValue(login).trim();
     const rows = await db.query(
       `SELECT id, nombre, email, password, rol_id, activo, identificacion
        FROM usuarios
-       WHERE email = ? OR identificacion = ?
+       WHERE LOWER(email) = LOWER(?) OR TRIM(CAST(identificacion AS CHAR)) = TRIM(?)
        LIMIT 1`,
-      [login, login]
+      [normalizedLogin, normalizedLogin]
     );
 
     if (!rows.length) {
@@ -37,17 +50,24 @@ const User = {
   },
 
   async validatePassword(plainPassword, storedPassword) {
-    if (!plainPassword || !storedPassword) {
+    const plain = normalizeDbValue(plainPassword);
+    const stored = normalizeDbValue(storedPassword).trim();
+
+    if (!plain || !stored) {
       return false;
     }
 
     // Compatibilidad: bcrypt para contrasenas hasheadas y comparacion directa para datos legacy.
-    const looksHashed = storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$');
+    const looksHashed = /^\$2[aby]\$\d{2}\$/.test(stored);
     if (looksHashed) {
-      return bcrypt.compare(plainPassword, storedPassword);
+      try {
+        return await bcrypt.compare(plain, stored);
+      } catch (error) {
+        return false;
+      }
     }
 
-    return plainPassword === storedPassword;
+    return plain === stored;
   },
 
   toSafeUser(userRow) {
