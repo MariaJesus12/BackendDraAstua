@@ -16,14 +16,14 @@ function normalizeDbValue(value) {
 }
 
 const User = {
-  async findByLogin(login) {
-    const normalizedLogin = normalizeDbValue(login).trim();
+  async findByIdentificacion(identificacion) {
+    const normalizedIdentificacion = normalizeDbValue(identificacion).trim();
     const rows = await db.query(
       `SELECT id, nombre, email, password, rol_id, activo, identificacion
        FROM usuarios
-       WHERE LOWER(email) = LOWER(?) OR TRIM(CAST(identificacion AS CHAR)) = TRIM(?)
+       WHERE TRIM(CAST(identificacion AS CHAR)) = TRIM(?)
        LIMIT 1`,
-      [normalizedLogin, normalizedLogin]
+      [normalizedIdentificacion]
     );
 
     if (!rows.length) {

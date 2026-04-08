@@ -3,19 +3,15 @@ const { generateToken } = require('../auth');
 
 exports.login = async (req, res) => {
   try {
-    const { username, email, identificacion, password } = req.body || {};
-    const normalizedEmail = email != null ? String(email).trim() : '';
-    const normalizedUsername = username != null ? String(username).trim() : '';
+    const { identificacion, password } = req.body || {};
     const normalizedIdentificacion = identificacion != null ? String(identificacion).trim() : '';
     const normalizedPassword = password != null ? String(password) : '';
 
-    const loginValue = normalizedEmail || normalizedUsername || normalizedIdentificacion;
-
-    if (!loginValue || !normalizedPassword) {
-      return res.status(400).json({ error: 'Email/identificacion y contraseña son obligatorios' });
+    if (!normalizedIdentificacion || !normalizedPassword) {
+      return res.status(400).json({ error: 'Identificacion y contraseña son obligatorios' });
     }
 
-    const userRow = await User.findByLogin(loginValue);
+    const userRow = await User.findByIdentificacion(normalizedIdentificacion);
     if (!userRow) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
