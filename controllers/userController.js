@@ -4,15 +4,14 @@ const { generateToken } = require('../auth');
 exports.login = async (req, res) => {
   try {
     const { username, email, identificacion, password } = req.body || {};
-    const loginValue = typeof email === 'string' && email.trim()
-      ? email.trim()
-      : typeof username === 'string' && username.trim()
-        ? username.trim()
-        : typeof identificacion === 'string'
-          ? identificacion.trim()
-          : '';
+    const normalizedEmail = email != null ? String(email).trim() : '';
+    const normalizedUsername = username != null ? String(username).trim() : '';
+    const normalizedIdentificacion = identificacion != null ? String(identificacion).trim() : '';
+    const normalizedPassword = password != null ? String(password) : '';
 
-    if (!loginValue || !password) {
+    const loginValue = normalizedEmail || normalizedUsername || normalizedIdentificacion;
+
+    if (!loginValue || !normalizedPassword) {
       return res.status(400).json({ error: 'Email/identificacion y contraseña son obligatorios' });
     }
 
@@ -25,7 +24,7 @@ exports.login = async (req, res) => {
       return res.status(403).json({ error: 'Usuario inactivo' });
     }
 
-    const isValidPassword = await User.validatePassword(password, userRow.password);
+    const isValidPassword = await User.validatePassword(normalizedPassword, userRow.password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
