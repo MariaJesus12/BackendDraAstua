@@ -28,6 +28,9 @@ class DbService {
             };
         }
 
+        this.dbConfig = dbConfig;
+        this.connectionSource = databaseUrl ? 'DATABASE_URL/MYSQL_URL' : 'DB_HOST/DB_USER/DB_PASSWORD/DB_NAME';
+
         // Configuración del pool de conexiones
         this.pool = mysql.createPool({
             host: dbConfig.host,
@@ -129,16 +132,19 @@ class DbService {
         try {
             const connection = await this.pool.getConnection();
             await connection.execute('SELECT 1 as test');
-            const dbName = process.env.DB_NAME || 'desconocida';
-            const host = process.env.DB_HOST || 'desconocido';
-            const port = process.env.DB_PORT || 3306;
+            const dbName = this.dbConfig.database || process.env.DB_NAME || 'desconocida';
+            const host = this.dbConfig.host || process.env.DB_HOST || 'desconocido';
+            const port = this.dbConfig.port || Number(process.env.DB_PORT) || 3306;
             console.log('✅ Conexión a MySQL exitosa');
             console.log(`📊 Base de datos: ${dbName}`);
             console.log(`🌐 Host: ${host}:${port}`);
+            console.log(`🧭 Configuración tomada de: ${this.connectionSource}`);
             connection.release();
             return true;
         } catch (error) {
             console.error('❌ Error conectando a MySQL:', error.message);
+            console.error(`🌐 Destino MySQL configurado: ${this.dbConfig.host || 'desconocido'}:${this.dbConfig.port || 3306}`);
+            console.error(`🧭 Configuración tomada de: ${this.connectionSource}`);
             return false;
         }
     }

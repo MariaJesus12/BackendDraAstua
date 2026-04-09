@@ -35,6 +35,12 @@ exports.login = async (req, res) => {
       user
     });
   } catch (error) {
+    const dbConnectivityErrors = new Set(['ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH']);
+    if (error && dbConnectivityErrors.has(error.code)) {
+      console.error('Error en login por conectividad a BD:', error.message, error.stack);
+      return res.status(503).json({ error: 'Base de datos no disponible temporalmente' });
+    }
+
     console.error('Error en login:', error.message, error.stack);
     return res.status(500).json({ error: 'Error interno en el login' });
   }
