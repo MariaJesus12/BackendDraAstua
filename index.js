@@ -3,6 +3,8 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const DbService = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
+const doctorRoutes = require('./routes/doctorRoutes');
+const patientRoutes = require('./routes/patientRoutes');
 
 dotenv.config();
 
@@ -82,6 +84,8 @@ app.get('/health', async (req, res) => {
 });
 
 app.use('/api/users', userRoutes);
+app.use('/api/doctores', doctorRoutes);
+app.use('/api/pacientes', patientRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

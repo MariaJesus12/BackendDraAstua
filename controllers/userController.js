@@ -1,4 +1,5 @@
 const User = require('../models/user');
+const Role = require('../models/role');
 const { generateToken } = require('../auth');
 
 exports.login = async (req, res) => {
@@ -61,5 +62,19 @@ exports.getProfile = async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo perfil:', error.message);
     return res.status(500).json({ error: 'Error interno obteniendo el perfil' });
+  }
+};
+
+exports.getRoles = async (req, res) => {
+  try {
+    const roles = await Role.findAll();
+    return res.status(200).json({ roles });
+  } catch (error) {
+    if (error && error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({ error: 'La tabla de roles no existe en la base de datos' });
+    }
+
+    console.error('Error obteniendo roles:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno obteniendo roles' });
   }
 };

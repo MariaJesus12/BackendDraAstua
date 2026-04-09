@@ -33,6 +33,38 @@ Rutas de usuario:
 
 - `POST /api/users/login`
 - `GET /api/users/profile` (requiere `Authorization: Bearer <token>`)
+- `GET /api/users/roles` (requiere `Authorization: Bearer <token>`)
+
+Rutas de doctores:
+
+- `POST /api/doctores` (requiere `Authorization: Bearer <token>`)
+- `GET /api/doctores` (requiere `Authorization: Bearer <token>`)
+- `GET /api/doctores/:id` (requiere `Authorization: Bearer <token>`)
+
+Payload recomendado para crear doctor:
+
+- `nombre` (string, requerido)
+- `email` (string, requerido)
+- `identificacion` (string, requerido)
+- `password` (string, requerido)
+- `activo` (boolean opcional, por defecto `true`)
+- `especialidad_ids` (array opcional de ids de `especialidades`)
+
+Rutas de pacientes:
+
+- `POST /api/pacientes` (requiere `Authorization: Bearer <token>`)
+- `GET /api/pacientes` (requiere `Authorization: Bearer <token>`)
+- `GET /api/pacientes/:id` (requiere `Authorization: Bearer <token>`)
+
+Payload recomendado para crear paciente:
+
+- `nombre` (string, requerido)
+- `identificacion` (string, requerido)
+- `telefono` (string, opcional)
+- `email` (string, opcional)
+- `fecha_nacimiento` (date, opcional)
+- `direccion` (text, opcional)
+- `activo` (boolean opcional, por defecto `true`)
 
 Preflight/CORS:
 
