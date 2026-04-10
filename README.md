@@ -32,14 +32,22 @@ Healthcheck:
 Rutas de usuario:
 
 - `POST /api/users/login`
+- `POST /api/users/loginUser`
 - `GET /api/users/profile` (requiere `Authorization: Bearer <token>`)
+- `GET /api/users/getProfile` (requiere `Authorization: Bearer <token>`)
 - `GET /api/users/roles` (requiere `Authorization: Bearer <token>`)
+- `GET /api/users/getRoles` (requiere `Authorization: Bearer <token>`)
+- `GET /api/users/roles/:id` (requiere `Authorization: Bearer <token>`)
+- `GET /api/users/getRoleById/:id` (requiere `Authorization: Bearer <token>`)
 
 Rutas de doctores:
 
 - `POST /api/doctores` (requiere `Authorization: Bearer <token>`)
+- `POST /api/doctores/createDoctor` (requiere `Authorization: Bearer <token>`)
 - `GET /api/doctores` (requiere `Authorization: Bearer <token>`)
+- `GET /api/doctores/getDoctors` (requiere `Authorization: Bearer <token>`)
 - `GET /api/doctores/:id` (requiere `Authorization: Bearer <token>`)
+- `GET /api/doctores/getDoctorById/:id` (requiere `Authorization: Bearer <token>`)
 
 Payload recomendado para crear doctor:
 
@@ -53,8 +61,11 @@ Payload recomendado para crear doctor:
 Rutas de pacientes:
 
 - `POST /api/pacientes` (requiere `Authorization: Bearer <token>`)
+- `POST /api/pacientes/createPatient` (requiere `Authorization: Bearer <token>`)
 - `GET /api/pacientes` (requiere `Authorization: Bearer <token>`)
+- `GET /api/pacientes/getPatients` (requiere `Authorization: Bearer <token>`)
 - `GET /api/pacientes/:id` (requiere `Authorization: Bearer <token>`)
+- `GET /api/pacientes/getPatientById/:id` (requiere `Authorization: Bearer <token>`)
 
 Payload recomendado para crear paciente:
 

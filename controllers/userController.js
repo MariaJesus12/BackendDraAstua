@@ -2,6 +2,11 @@ const User = require('../models/user');
 const Role = require('../models/role');
 const { generateToken } = require('../auth');
 
+function parseId(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 exports.login = async (req, res) => {
   try {
     const { identificacion, password } = req.body || {};
@@ -76,5 +81,28 @@ exports.getRoles = async (req, res) => {
 
     console.error('Error obteniendo roles:', error.message, error.stack);
     return res.status(500).json({ error: 'Error interno obteniendo roles' });
+  }
+};
+
+exports.getRoleById = async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'El id del rol es invalido' });
+    }
+
+    const role = await Role.findById(id);
+    if (!role) {
+      return res.status(404).json({ error: 'Rol no encontrado' });
+    }
+
+    return res.status(200).json({ role });
+  } catch (error) {
+    if (error && error.code === 'ER_NO_SUCH_TABLE') {
+      return res.status(500).json({ error: 'La tabla de roles no existe en la base de datos' });
+    }
+
+    console.error('Error obteniendo rol por id:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno obteniendo rol por id' });
   }
 };
