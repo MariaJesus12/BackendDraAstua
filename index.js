@@ -5,6 +5,8 @@ const DbService = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
 const patientRoutes = require('./routes/patientRoutes');
+const authMiddleware = require('./middlewares/authMiddleware');
+const userController = require('./controllers/userController');
 
 dotenv.config();
 
@@ -86,6 +88,8 @@ app.get('/health', async (req, res) => {
 app.use('/api/users', userRoutes);
 app.use('/api/doctores', doctorRoutes);
 app.use('/api/pacientes', patientRoutes);
+app.get('/api/getRoleById/:id', authMiddleware, userController.getRoleById);
+app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

@@ -39,6 +39,8 @@ Rutas de usuario:
 - `GET /api/users/getRoles` (requiere `Authorization: Bearer <token>`)
 - `GET /api/users/roles/:id` (requiere `Authorization: Bearer <token>`)
 - `GET /api/users/getRoleById/:id` (requiere `Authorization: Bearer <token>`)
+- `GET /api/getRoleById/:id` (alias de compatibilidad, requiere `Authorization: Bearer <token>`)
+- `GET /api/roles/:id` (alias de compatibilidad, requiere `Authorization: Bearer <token>`)
 
 Rutas de doctores:
 
