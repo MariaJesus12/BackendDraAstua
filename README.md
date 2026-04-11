@@ -31,9 +31,7 @@ Healthcheck:
 
 Rutas de usuario:
 
-- `POST /api/users/login`
 - `POST /api/users/loginUser`
-- `GET /api/users/profile` (requiere `Authorization: Bearer <token>`)
 - `GET /api/users/getProfile` (requiere `Authorization: Bearer <token>`)
 - `GET /api/users/roles` (requiere `Authorization: Bearer <token>`)
 - `GET /api/users/getRoles` (requiere `Authorization: Bearer <token>`)
@@ -41,6 +39,12 @@ Rutas de usuario:
 - `GET /api/users/getRoleById/:id` (requiere `Authorization: Bearer <token>`)
 - `GET /api/getRoleById/:id` (alias de compatibilidad, requiere `Authorization: Bearer <token>`)
 - `GET /api/roles/:id` (alias de compatibilidad, requiere `Authorization: Bearer <token>`)
+
+Respuesta de `GET /api/getRoleById/:id`:
+
+- `role` con el objeto completo del rol
+- `nombre` con el nombre del rol
+- `name` con el mismo valor para compatibilidad con frontend
 
 Rutas de doctores:
 
@@ -78,6 +82,29 @@ Payload recomendado para crear paciente:
 - `fecha_nacimiento` (date, opcional)
 - `direccion` (text, opcional)
 - `activo` (boolean opcional, por defecto `true`)
+
+Rutas de secretaria:
+
+- `GET /api/secretaria/agendas?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
+- `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
+- `GET /api/secretaria/doctor-visits/summary?month=YYYY-MM` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
+- `POST /api/secretaria/doctor-visits` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
+
+Body para `POST /api/secretaria/doctor-visits`:
+
+- `doctorId` (number, requerido)
+- `date` (string `YYYY-MM-DD`, requerido)
+- `startTime` (string `HH:MM`, requerido)
+- `endTime` (string `HH:MM`, requerido)
+- `reason` (string, opcional)
+- `notes` (string, opcional)
+- `expedienteId` (number, opcional)
+
+Notas de compatibilidad para secretaria:
+
+- Las respuestas incluyen alias en snake_case y camelCase para evitar problemas de integracion.
+- `consultorio` y `room` se devuelven como `null` porque el esquema actual no tiene una columna de consultorio.
+- `hora_fin` y `endTime` se guardan como metadato en `auditoria` para mantener compatibilidad con el frontend sin cambiar la tabla `citas`.
 
 Preflight/CORS:
 

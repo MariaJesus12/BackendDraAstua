@@ -5,6 +5,7 @@ const DbService = require('./config/database');
 const userRoutes = require('./routes/userRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
 const patientRoutes = require('./routes/patientRoutes');
+const secretariaRoutes = require('./routes/secretariaRoutes');
 const authMiddleware = require('./middlewares/authMiddleware');
 const userController = require('./controllers/userController');
 
@@ -88,6 +89,7 @@ app.get('/health', async (req, res) => {
 app.use('/api/users', userRoutes);
 app.use('/api/doctores', doctorRoutes);
 app.use('/api/pacientes', patientRoutes);
+app.use('/api/secretaria', secretariaRoutes);
 app.get('/api/getRoleById/:id', authMiddleware, userController.getRoleById);
 app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
 

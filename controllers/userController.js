@@ -96,7 +96,12 @@ exports.getRoleById = async (req, res) => {
       return res.status(404).json({ error: 'Rol no encontrado' });
     }
 
-    return res.status(200).json({ role });
+    return res.status(200).json({
+      role,
+      id: role.id,
+      nombre: role.nombre,
+      name: role.nombre
+    });
   } catch (error) {
     if (error && error.code === 'ER_NO_SUCH_TABLE') {
       return res.status(500).json({ error: 'La tabla de roles no existe en la base de datos' });
