@@ -1,5 +1,43 @@
 const Secretaria = require('../models/secretaria');
 
+function pickFirstDefined(values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function normalizeDateInput(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) {
+    return '';
+  }
+
+  const isoMatch = rawValue.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) {
+    return isoMatch[1];
+  }
+
+  return rawValue;
+}
+
+function normalizeTimeInput(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) {
+    return '';
+  }
+
+  const timeMatch = rawValue.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  if (timeMatch) {
+    return timeMatch[1];
+  }
+
+  return rawValue;
+}
+
 function isValidDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
 }
@@ -231,24 +269,35 @@ exports.getDoctorVisitsSummary = async (req, res) => {
 
 exports.createDoctorVisit = async (req, res) => {
   try {
-    const doctorId = Number(req.body && req.body.doctorId);
-    const expedienteId = req.body && req.body.expedienteId != null ? Number(req.body.expedienteId) : null;
-    const date = req.body && req.body.date != null ? String(req.body.date).trim() : '';
-    const startTime = req.body && req.body.startTime != null ? String(req.body.startTime).trim() : '';
-    const endTime = req.body && req.body.endTime != null ? String(req.body.endTime).trim() : '';
-    const reason = req.body && req.body.reason != null ? String(req.body.reason).trim() : '';
-    const notes = req.body && req.body.notes != null ? String(req.body.notes).trim() : '';
+    const body = req.body || {};
+    const doctorId = Number(pickFirstDefined([body.doctorId, body.doctor_id]));
+    const expedienteIdValue = pickFirstDefined([body.expedienteId, body.expediente_id]);
+    const expedienteId = expedienteIdValue !== '' ? Number(expedienteIdValue) : null;
+    const date = normalizeDateInput(pickFirstDefined([body.date, body.fecha]));
+    const startTime = normalizeTimeInput(pickFirstDefined([body.startTime, body.hora_inicio, body.start_time]));
+    const endTime = normalizeTimeInput(pickFirstDefined([body.endTime, body.hora_fin, body.end_time]));
+    const reason = String(pickFirstDefined([body.reason, body.motivo]) || '').trim();
+    const notes = String(pickFirstDefined([body.notes, body.notas]) || '').trim();
 
     if (!Number.isInteger(doctorId) || doctorId <= 0) {
-      return res.status(400).json({ error: 'doctorId es obligatorio y debe ser un entero positivo' });
+      return res.status(400).json({
+        error: 'doctorId es obligatorio y debe ser un entero positivo',
+        acceptedFields: ['doctorId', 'doctor_id']
+      });
     }
 
     if (!isValidDate(date)) {
-      return res.status(400).json({ error: 'date es obligatorio y debe tener formato YYYY-MM-DD' });
+      return res.status(400).json({
+        error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
+        acceptedFields: ['date', 'fecha']
+      });
     }
 
     if (!isValidTime(startTime) || !isValidTime(endTime)) {
-      return res.status(400).json({ error: 'startTime y endTime son obligatorios y deben tener formato HH:MM' });
+      return res.status(400).json({
+        error: 'startTime y endTime son obligatorios y deben tener formato HH:MM',
+        acceptedFields: ['startTime', 'hora_inicio', 'endTime', 'hora_fin']
+      });
     }
 
     if (compareTimes(startTime, endTime) >= 0) {
