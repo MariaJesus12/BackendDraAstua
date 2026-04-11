@@ -114,6 +114,8 @@ const Secretaria = {
   },
 
   async createDoctorVisit(payload) {
+    console.log('📝 Creando visita con payload:', JSON.stringify(payload));
+    
     const insertResult = await db.query(
       `INSERT INTO citas (expediente_id, doctor_id, especialidad_id, fecha, hora, estado, motivo)
        VALUES (?, ?, ?, ?, ?, 'pendiente', ?)`,
@@ -127,12 +129,22 @@ const Secretaria = {
       ]
     );
 
+    console.log('📊 Resultado INSERT:', insertResult);
+    
+    if (!insertResult || !insertResult.insertId) {
+      console.error('❌ InsertResult no tiene insertId:', insertResult);
+      throw new Error('No se obtuvo el ID de la cita creada');
+    }
+
+    const citaId = insertResult.insertId;
+    console.log('✅ Cita creada con id:', citaId);
+
     await db.query(
       `INSERT INTO auditoria (usuario_id, tabla_afectada, accion, registro_id, descripcion)
        VALUES (?, 'citas', 'INSERT', ?, ?)`,
       [
         payload.createdBy,
-        insertResult.insertId,
+        citaId,
         JSON.stringify({
           source: 'secretaria-doctor-visit',
           endTime: payload.endTime,
@@ -140,6 +152,8 @@ const Secretaria = {
         })
       ]
     );
+
+    console.log('✅ Auditoría registrada para cita:', citaId);
 
     const rows = await db.query(
       `SELECT c.id,
@@ -162,9 +176,10 @@ const Secretaria = {
        ) esp ON esp.doctor_id = c.doctor_id
        WHERE c.id = ?
        LIMIT 1`,
-      [insertResult.insertId]
+      [citaId]
     );
 
+    console.log('✅ Cita recuperada desde BD:', rows.length > 0 ? rows[0].id : 'NO ENCONTRADA');
     return rows.length ? rows[0] : null;
   }
 };

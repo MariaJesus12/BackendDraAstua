@@ -21,6 +21,11 @@ function normalizeDateInput(value) {
     return isoMatch[1];
   }
 
+  const slashMatch = rawValue.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+  if (slashMatch) {
+    return `${slashMatch[1]}-${slashMatch[2]}-${slashMatch[3]}`;
+  }
+
   return rawValue;
 }
 
@@ -30,9 +35,11 @@ function normalizeTimeInput(value) {
     return '';
   }
 
-  const timeMatch = rawValue.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  const timeMatch = rawValue.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (timeMatch) {
-    return timeMatch[1];
+    const hours = String(timeMatch[1]).padStart(2, '0');
+    const minutes = String(timeMatch[2]).padStart(2, '0');
+    return `${hours}:${minutes}`;
   }
 
   return rawValue;
@@ -270,54 +277,87 @@ exports.getDoctorVisitsSummary = async (req, res) => {
 exports.createDoctorVisit = async (req, res) => {
   try {
     const body = req.body || {};
-    const doctorId = Number(pickFirstDefined([body.doctorId, body.doctor_id]));
-    const expedienteIdValue = pickFirstDefined([body.expedienteId, body.expediente_id]);
-    const expedienteId = expedienteIdValue !== '' ? Number(expedienteIdValue) : null;
-    const date = normalizeDateInput(pickFirstDefined([body.date, body.fecha]));
-    const startTime = normalizeTimeInput(pickFirstDefined([body.startTime, body.hora_inicio, body.start_time]));
-    const endTime = normalizeTimeInput(pickFirstDefined([body.endTime, body.hora_fin, body.end_time]));
+    console.log('🔍 Body recibido en createDoctorVisit:', JSON.stringify(body));
+
+    const doctorIdRaw = pickFirstDefined([body.doctorId, body.doctor_id]);
+    const doctorId = doctorIdRaw ? Number(doctorIdRaw) : NaN;
+
+    const expedienteIdRaw = pickFirstDefined([body.expedienteId, body.expediente_id]);
+    const expedienteId = expedienteIdRaw && expedienteIdRaw !== '' ? Number(expedienteIdRaw) : null;
+
+    const dateRaw = pickFirstDefined([body.date, body.fecha]);
+    const date = normalizeDateInput(dateRaw);
+
+    const startTimeRaw = pickFirstDefined([body.startTime, body.hora_inicio, body.start_time]);
+    const startTime = normalizeTimeInput(startTimeRaw);
+
+    const endTimeRaw = pickFirstDefined([body.endTime, body.hora_fin, body.end_time]);
+    const endTime = normalizeTimeInput(endTimeRaw);
+
     const reason = String(pickFirstDefined([body.reason, body.motivo]) || '').trim();
     const notes = String(pickFirstDefined([body.notes, body.notas]) || '').trim();
 
+    console.log('📋 Datos normalizados:', { doctorId, date, startTime, endTime, reason, notes });
+
     if (!Number.isInteger(doctorId) || doctorId <= 0) {
+      console.error('❌ doctorId inválido:', doctorIdRaw, '-> Number:', doctorId);
       return res.status(400).json({
         error: 'doctorId es obligatorio y debe ser un entero positivo',
+        received: { doctorIdRaw, doctorId },
         acceptedFields: ['doctorId', 'doctor_id']
       });
     }
 
-    if (!isValidDate(date)) {
+    if (!date || !isValidDate(date)) {
+      console.error('❌ date inválido:', dateRaw, '-> normalized:', date);
       return res.status(400).json({
         error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
+        received: { dateRaw, date },
         acceptedFields: ['date', 'fecha']
       });
     }
 
-    if (!isValidTime(startTime) || !isValidTime(endTime)) {
+    if (!startTime || !isValidTime(startTime)) {
+      console.error('❌ startTime inválido:', startTimeRaw, '-> normalized:', startTime);
       return res.status(400).json({
-        error: 'startTime y endTime son obligatorios y deben tener formato HH:MM',
-        acceptedFields: ['startTime', 'hora_inicio', 'endTime', 'hora_fin']
+        error: 'startTime es obligatorio y debe tener formato HH:MM',
+        received: { startTimeRaw, startTime },
+        acceptedFields: ['startTime', 'hora_inicio', 'start_time']
+      });
+    }
+
+    if (!endTime || !isValidTime(endTime)) {
+      console.error('❌ endTime inválido:', endTimeRaw, '-> normalized:', endTime);
+      return res.status(400).json({
+        error: 'endTime es obligatorio y debe tener formato HH:MM',
+        received: { endTimeRaw, endTime },
+        acceptedFields: ['endTime', 'hora_fin', 'end_time']
       });
     }
 
     if (compareTimes(startTime, endTime) >= 0) {
-      return res.status(400).json({ error: 'endTime debe ser mayor que startTime' });
+      return res.status(400).json({ error: 'endTime debe ser mayor que startTime', startTime, endTime });
     }
 
     const doctor = await Secretaria.findDoctorById(doctorId);
     if (!doctor) {
-      return res.status(404).json({ error: 'Doctor no encontrado' });
+      console.error('❌ Doctor no encontrado:', doctorId);
+      return res.status(404).json({ error: 'Doctor no encontrado', doctorId });
     }
 
     if (!doctor.activo) {
-      return res.status(400).json({ error: 'El doctor indicado esta inactivo' });
+      console.error('❌ Doctor inactivo:', doctorId);
+      return res.status(400).json({ error: 'El doctor indicado esta inactivo', doctorId });
     }
 
     if (String(doctor.rol_nombre).trim().toLowerCase() !== 'doctor') {
-      return res.status(400).json({ error: 'El usuario indicado no pertenece al rol doctor' });
+      console.error('❌ Usuario no tiene rol doctor:', doctorId, 'rol:', doctor.rol_nombre);
+      return res.status(400).json({ error: 'El usuario indicado no pertenece al rol doctor', doctorId });
     }
 
     const especialidadId = await Secretaria.findDoctorPrimarySpecialtyId(doctorId);
+    console.log('✅ Especialidad encontrada:', especialidadId);
+
     const createdVisitRow = await Secretaria.createDoctorVisit({
       doctorId,
       expedienteId: Number.isInteger(expedienteId) && expedienteId > 0 ? expedienteId : null,
@@ -330,17 +370,24 @@ exports.createDoctorVisit = async (req, res) => {
       createdBy: req.user.id
     });
 
+    if (!createdVisitRow) {
+      console.error('❌ No se pudo recuperar la visita creada');
+      return res.status(500).json({ error: 'No se pudo recuperar la visita creada' });
+    }
+
     const visit = mapVisit(
       {
         ...createdVisitRow,
-        motivo: createdVisitRow ? createdVisitRow.motivo : reason,
-        estado: createdVisitRow ? createdVisitRow.estado : 'pendiente'
+        motivo: createdVisitRow.motivo || reason,
+        estado: createdVisitRow.estado || 'pendiente'
       },
       new Map([[createdVisitRow.id, { endTime, notes }]])
     );
 
+    console.log('✅ Visita creada exitosamente:', visit.id);
     return res.status(201).json({ visit });
   } catch (error) {
+    console.error('❌ Error en createDoctorVisit:', error.message, error.stack);
     return handleDatabaseError(res, error, 'Error interno creando visita de doctor');
   }
 };
