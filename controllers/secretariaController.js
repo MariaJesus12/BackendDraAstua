@@ -215,42 +215,77 @@ function handleDatabaseError(res, error, fallbackMessage) {
 
 exports.getAgendas = async (req, res) => {
   try {
-    const { fromDate, toDate } = req.query;
+    console.log('📅 getAgendas llamado con query:', req.query);
+    
+    const fromDate = req.query.fromDate || req.query.from_date;
+    const toDate = req.query.toDate || req.query.to_date;
+    
+    console.log('📝 Fechas normalizadas:', { fromDate, toDate });
 
-    if (!isValidDate(fromDate) || !isValidDate(toDate)) {
-      return res.status(400).json({ error: 'fromDate y toDate son obligatorios y deben tener formato YYYY-MM-DD' });
+    if (!fromDate || !toDate || !isValidDate(fromDate) || !isValidDate(toDate)) {
+      console.log('❌ Fechas inválidas:', { fromDate, toDate });
+      return res.status(400).json({
+        error: 'fromDate y toDate son obligatorios y deben tener formato YYYY-MM-DD',
+        received: { fromDate, toDate }
+      });
     }
 
     if (String(fromDate) > String(toDate)) {
       return res.status(400).json({ error: 'fromDate no puede ser mayor que toDate' });
     }
 
+    console.log('🔍 Buscando citas entre', fromDate, 'y', toDate);
     const rows = await Secretaria.findDoctorVisitRows(fromDate, toDate);
+    console.log('✅ Citas encontradas:', rows.length);
+    
+    if (!rows.length) {
+      return res.status(200).json({ agendas: [] });
+    }
+    
     const metadataRows = await Secretaria.findAuditMetadataByCitaIds(rows.map((row) => row.id));
     const metadataByCitaId = parseAuditMetadataRows(metadataRows);
     const visits = rows.map((row) => mapVisit(row, metadataByCitaId));
     const agendas = groupAgendaItems(visits);
 
+    console.log('✅ Agendas agrupadas:', agendas.length);
     return res.status(200).json({ agendas });
   } catch (error) {
+    console.error('❌ Error en getAgendas:', error.message, error.stack);
     return handleDatabaseError(res, error, 'Error interno obteniendo agendas');
   }
 };
 
 exports.getDoctorVisits = async (req, res) => {
   try {
-    const { date } = req.query;
-    if (!isValidDate(date)) {
-      return res.status(400).json({ error: 'date es obligatorio y debe tener formato YYYY-MM-DD' });
+    console.log('📅 getDoctorVisits llamado con query:', req.query);
+    
+    const date = req.query.date || req.query.fecha;
+    console.log('📝 Fecha normalizada:', date);
+    
+    if (!date || !isValidDate(date)) {
+      console.log('❌ Fecha inválida:', date);
+      return res.status(400).json({
+        error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
+        received: { date }
+      });
     }
 
+    console.log('🔍 Buscando citas para:', date);
     const rows = await Secretaria.findDoctorVisitRowsByDate(date);
+    console.log('✅ Citas encontradas:', rows.length);
+    
+    if (!rows.length) {
+      return res.status(200).json({ visits: [] });
+    }
+    
     const metadataRows = await Secretaria.findAuditMetadataByCitaIds(rows.map((row) => row.id));
     const metadataByCitaId = parseAuditMetadataRows(metadataRows);
     const visits = rows.map((row) => mapVisit(row, metadataByCitaId));
 
+    console.log('✅ Visitas mappadas:', visits.length);
     return res.status(200).json({ visits });
   } catch (error) {
+    console.error('❌ Error en getDoctorVisits:', error.message, error.stack);
     return handleDatabaseError(res, error, 'Error interno obteniendo visitas de doctores');
   }
 };

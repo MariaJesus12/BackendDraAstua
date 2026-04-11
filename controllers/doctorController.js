@@ -55,9 +55,12 @@ exports.createDoctor = async (req, res) => {
 
 exports.listDoctors = async (req, res) => {
   try {
+    console.log('👨‍⚕️ listDoctors llamado');
     const doctors = await Doctor.findAll();
+    console.log('✅ Doctores encontrados:', doctors.length);
     return res.status(200).json({ doctors });
   } catch (error) {
+    console.error('❌ Error en listDoctors:', error.message, error.stack);
     return handleDbError(res, error, 'doctores');
   }
 };
