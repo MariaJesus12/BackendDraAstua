@@ -139,21 +139,30 @@ const Secretaria = {
     const citaId = insertResult.insertId;
     console.log('✅ Cita creada con id:', citaId);
 
-    await db.query(
-      `INSERT INTO auditoria (usuario_id, tabla_afectada, accion, registro_id, descripcion)
-       VALUES (?, 'citas', 'INSERT', ?, ?)`,
-      [
-        payload.createdBy,
-        citaId,
-        JSON.stringify({
-          source: 'secretaria-doctor-visit',
-          endTime: payload.endTime,
-          notes: payload.notes || null
-        })
-      ]
-    );
+    if (payload.createdBy) {
+      try {
+        await db.query(
+          `INSERT INTO auditoria (usuario_id, tabla_afectada, accion, registro_id, descripcion)
+           VALUES (?, 'citas', 'INSERT', ?, ?)`,
+          [
+            payload.createdBy,
+            citaId,
+            JSON.stringify({
+              source: 'secretaria-doctor-visit',
+              endTime: payload.endTime,
+              notes: payload.notes || null
+            })
+          ]
+        );
 
-    console.log('✅ Auditoría registrada para cita:', citaId);
+        console.log('✅ Auditoría registrada para cita:', citaId);
+      } catch (auditError) {
+        // La cita ya fue creada; la auditoria se trata como best-effort.
+        console.warn('⚠️ No se pudo registrar auditoría para cita:', citaId, auditError.code || auditError.message);
+      }
+    } else {
+      console.warn('⚠️ Se omitió auditoría por falta de usuario creador válido para cita:', citaId);
+    }
 
     const rows = await db.query(
       `SELECT c.id,

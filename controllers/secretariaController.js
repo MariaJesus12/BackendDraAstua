@@ -85,6 +85,24 @@ function normalizeStatus(estado) {
   return normalized || 'scheduled';
 }
 
+function normalizePositiveInt(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function resolveActorId(userPayload) {
+  const payload = userPayload || {};
+  const candidate = pickFirstDefined([
+    payload.id,
+    payload.userId,
+    payload.usuarioId,
+    payload.usuario_id,
+    payload.sub
+  ]);
+
+  return normalizePositiveInt(candidate);
+}
+
 function parseAuditMetadataRows(rows) {
   const metadataByCitaId = new Map();
 
@@ -210,6 +228,27 @@ function handleDatabaseError(res, error, fallbackMessage) {
     return res.status(400).json({ error: 'Uno de los ids enviados no existe o no cumple una relacion requerida' });
   }
 
+  if (error && error.code === 'ER_BAD_NULL_ERROR') {
+    return res.status(400).json({
+      error: 'Falta un dato obligatorio para guardar la visita (revise doctorId, expedienteId/patientId, fecha y hora)',
+      detail: error.sqlMessage || error.message
+    });
+  }
+
+  if (error && error.code === 'ER_DATA_TOO_LONG') {
+    return res.status(422).json({
+      error: 'Uno de los campos supera la longitud permitida por la base de datos',
+      detail: error.sqlMessage || error.message
+    });
+  }
+
+  if (error && error.code === 'ER_TRUNCATED_WRONG_VALUE') {
+    return res.status(400).json({
+      error: 'Uno de los valores enviados tiene formato invalido para la base de datos',
+      detail: error.sqlMessage || error.message
+    });
+  }
+
   console.error(fallbackMessage, error.message, error.stack);
   return res.status(500).json({ error: fallbackMessage });
 }
@@ -332,8 +371,15 @@ exports.createDoctorVisit = async (req, res) => {
     const doctorIdRaw = pickFirstDefined([body.doctorId, body.doctor_id]);
     const doctorId = doctorIdRaw ? Number(doctorIdRaw) : NaN;
 
-    const expedienteIdRaw = pickFirstDefined([body.expedienteId, body.expediente_id]);
-    const expedienteId = expedienteIdRaw && expedienteIdRaw !== '' ? Number(expedienteIdRaw) : null;
+    const expedienteIdRaw = pickFirstDefined([
+      body.expedienteId,
+      body.expediente_id,
+      body.patientId,
+      body.patient_id,
+      body.pacienteId,
+      body.paciente_id
+    ]);
+    const expedienteId = normalizePositiveInt(expedienteIdRaw);
 
     const dateRaw = pickFirstDefined([body.date, body.fecha]);
     const date = normalizeDateInput(dateRaw);
@@ -347,7 +393,7 @@ exports.createDoctorVisit = async (req, res) => {
     const reason = String(pickFirstDefined([body.reason, body.motivo]) || '').trim();
     const notes = String(pickFirstDefined([body.notes, body.notas]) || '').trim();
 
-    console.log('📋 Datos normalizados:', { doctorId, date, startTime, endTime, reason, notes });
+    console.log('📋 Datos normalizados:', { doctorId, expedienteId, date, startTime, endTime, reason, notes });
 
     if (!Number.isInteger(doctorId) || doctorId <= 0) {
       console.error('❌ doctorId inválido:', doctorIdRaw, '-> Number:', doctorId);
@@ -385,6 +431,14 @@ exports.createDoctorVisit = async (req, res) => {
       });
     }
 
+    if (expedienteIdRaw && !expedienteId) {
+      return res.status(400).json({
+        error: 'expedienteId/patientId debe ser un entero positivo cuando se envia',
+        received: { expedienteIdRaw },
+        acceptedFields: ['expedienteId', 'expediente_id', 'patientId', 'patient_id', 'pacienteId', 'paciente_id']
+      });
+    }
+
     if (compareTimes(startTime, endTime) >= 0) {
       return res.status(400).json({ error: 'endTime debe ser mayor que startTime', startTime, endTime });
     }
@@ -395,9 +449,14 @@ exports.createDoctorVisit = async (req, res) => {
       return res.status(404).json({ error: 'Doctor no encontrado', doctorId });
     }
 
-    if (!doctor.activo) {
+    if (!Number(doctor.activo)) {
       console.error('❌ Doctor inactivo:', doctorId);
       return res.status(400).json({ error: 'El doctor indicado esta inactivo', doctorId });
+    }
+
+    const createdBy = resolveActorId(req.user);
+    if (!createdBy) {
+      console.warn('⚠️ Token sin id de usuario compatible, se omite usuario_id en auditoria');
     }
 
     if (String(doctor.rol_nombre).trim().toLowerCase() !== 'doctor') {
@@ -410,14 +469,14 @@ exports.createDoctorVisit = async (req, res) => {
 
     const createdVisitRow = await Secretaria.createDoctorVisit({
       doctorId,
-      expedienteId: Number.isInteger(expedienteId) && expedienteId > 0 ? expedienteId : null,
+      expedienteId,
       especialidadId,
       date,
       startTime,
       endTime,
       reason,
       notes,
-      createdBy: req.user.id
+      createdBy
     });
 
     if (!createdVisitRow) {

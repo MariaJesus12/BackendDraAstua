@@ -102,6 +102,16 @@ Body para `POST /api/secretaria/doctor-visits`:
 - `notes` (string, opcional)
 - `expedienteId` (number, opcional)
 
+Aliases aceptados para compatibilidad de payload:
+
+- `doctor_id` para `doctorId`
+- `fecha` para `date`
+- `hora_inicio` o `start_time` para `startTime`
+- `hora_fin` o `end_time` para `endTime`
+- `motivo` para `reason`
+- `notas` para `notes`
+- `expediente_id`, `patientId`, `patient_id`, `pacienteId`, `paciente_id` para `expedienteId`
+
 Notas de compatibilidad para secretaria:
 
 - Las respuestas incluyen alias en snake_case y camelCase para evitar problemas de integracion.
