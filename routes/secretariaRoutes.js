@@ -7,6 +7,8 @@ const requireRoles = require('../middlewares/roleMiddleware');
 const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', 'administrador'])];
 const basicAuth = [authMiddleware];
 
+router.get('/doctors', basicAuth, secretariaController.getDoctors);
+router.get('/getDoctors', basicAuth, secretariaController.getDoctors);
 router.get('/agendas', basicAuth, secretariaController.getAgendas);
 router.get('/doctor-visits', basicAuth, secretariaController.getDoctorVisits);
 router.get('/doctor-visits/summary', basicAuth, secretariaController.getDoctorVisitsSummary);

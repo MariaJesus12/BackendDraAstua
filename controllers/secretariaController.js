@@ -1,4 +1,5 @@
 const Secretaria = require('../models/secretaria');
+const Doctor = require('../models/doctor');
 
 function pickFirstDefined(values) {
   for (const value of values) {
@@ -306,6 +307,20 @@ exports.getDoctorVisitsSummary = async (req, res) => {
     return res.status(200).json(summary);
   } catch (error) {
     return handleDatabaseError(res, error, 'Error interno obteniendo resumen de visitas');
+  }
+};
+
+exports.getDoctors = async (req, res) => {
+  try {
+    const doctors = await Doctor.findAll();
+
+    return res.status(200).json({
+      doctors,
+      items: doctors,
+      total: doctors.length
+    });
+  } catch (error) {
+    return handleDatabaseError(res, error, 'Error interno obteniendo doctores');
   }
 };
 

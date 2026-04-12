@@ -69,15 +69,39 @@ async function findEspecialidadesByDoctorId(doctorId) {
   return rows;
 }
 
+function parseEspecialidades(rawValue) {
+  if (!rawValue) {
+    return [];
+  }
+
+  return String(rawValue)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function mapDoctorRow(row, especialidades) {
+  const specialtyNames = Array.isArray(especialidades)
+    ? especialidades.map((especialidad) => especialidad.nombre)
+    : parseEspecialidades(row.especialidades_nombres);
+  const specialty = specialtyNames.length ? specialtyNames.join(', ') : null;
+
   return {
     id: row.id,
+    doctor_id: row.id,
+    doctorId: row.id,
     nombre: row.nombre,
+    doctor_name: row.nombre,
+    doctorName: row.nombre,
     email: row.email,
     identificacion: row.identificacion,
     activo: Boolean(row.activo),
     rol: row.rol,
-    especialidades
+    specialty,
+    especialidad: specialty,
+    especialidades: Array.isArray(especialidades)
+      ? especialidades
+      : specialtyNames.map((nombre, index) => ({ id: index + 1, nombre }))
   };
 }
 
@@ -120,20 +144,23 @@ const Doctor = {
 
   async findAll() {
     const doctorRows = await db.query(
-      `SELECT u.id, u.nombre, u.email, u.identificacion, u.activo, r.nombre AS rol
+      `SELECT u.id,
+              u.nombre,
+              u.email,
+              u.identificacion,
+              u.activo,
+              r.nombre AS rol,
+              GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS especialidades_nombres
        FROM usuarios u
        INNER JOIN roles r ON r.id = u.rol_id
+       LEFT JOIN doctor_especialidad de ON de.doctor_id = u.id
+       LEFT JOIN especialidades e ON e.id = de.especialidad_id
        WHERE LOWER(r.nombre) = 'doctor'
+       GROUP BY u.id, u.nombre, u.email, u.identificacion, u.activo, r.nombre
        ORDER BY u.id DESC`
     );
 
-    const doctors = [];
-    for (const row of doctorRows) {
-      const especialidades = await findEspecialidadesByDoctorId(row.id);
-      doctors.push(mapDoctorRow(row, especialidades));
-    }
-
-    return doctors;
+    return doctorRows.map((row) => mapDoctorRow(row));
   },
 
   async findById(id) {

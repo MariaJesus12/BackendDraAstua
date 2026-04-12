@@ -85,6 +85,8 @@ Payload recomendado para crear paciente:
 
 Rutas de secretaria:
 
+- `GET /api/secretaria/doctors` (requiere `Authorization: Bearer <token>`)
+- `GET /api/secretaria/getDoctors` (requiere `Authorization: Bearer <token>`)
 - `GET /api/secretaria/agendas?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
 - `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
 - `GET /api/secretaria/doctor-visits/summary?month=YYYY-MM` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
