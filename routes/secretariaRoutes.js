@@ -9,9 +9,9 @@ const basicAuth = [authMiddleware];
 
 router.get('/doctors', basicAuth, secretariaController.getDoctors);
 router.get('/getDoctors', basicAuth, secretariaController.getDoctors);
-router.get('/agendas', basicAuth, secretariaController.getAgendas);
-router.get('/doctor-visits', basicAuth, secretariaController.getDoctorVisits);
-router.get('/doctor-visits/summary', basicAuth, secretariaController.getDoctorVisitsSummary);
-router.post('/doctor-visits', basicAuth, secretariaController.createDoctorVisit);
+router.get('/agendas', secretariaAccess, secretariaController.getAgendas);
+router.get('/doctor-visits', secretariaAccess, secretariaController.getDoctorVisits);
+router.get('/doctor-visits/summary', secretariaAccess, secretariaController.getDoctorVisitsSummary);
+router.post('/doctor-visits', secretariaAccess, secretariaController.createDoctorVisit);
 
 module.exports = router;

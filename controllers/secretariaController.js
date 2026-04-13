@@ -76,13 +76,44 @@ function normalizeStatus(estado) {
   if (normalized === 'pendiente') {
     return 'scheduled';
   }
+  if (normalized === 'programada') {
+    return 'scheduled';
+  }
   if (normalized === 'atendida') {
+    return 'completed';
+  }
+  if (normalized === 'completada') {
     return 'completed';
   }
   if (normalized === 'cancelada') {
     return 'cancelled';
   }
   return normalized || 'scheduled';
+}
+
+function normalizeVisitStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) {
+    return 'programada';
+  }
+
+  if (normalized === 'scheduled' || normalized === 'pendiente') {
+    return 'programada';
+  }
+
+  if (normalized === 'completed') {
+    return 'completada';
+  }
+
+  if (normalized === 'cancelled') {
+    return 'cancelada';
+  }
+
+  return normalized;
+}
+
+function isValidVisitStatus(value) {
+  return ['programada', 'completada', 'cancelada'].includes(String(value || '').trim().toLowerCase());
 }
 
 function normalizePositiveInt(value) {
@@ -126,9 +157,11 @@ function parseAuditMetadataRows(rows) {
 
 function mapVisit(row, metadataByCitaId) {
   const metadata = metadataByCitaId.get(row.id) || {};
-  const endTime = metadata.endTime && isValidTime(metadata.endTime)
-    ? metadata.endTime
-    : addMinutes(row.hora_inicio, 30);
+  const endTime = row.hora_fin && isValidTime(row.hora_fin)
+    ? row.hora_fin
+    : (metadata.endTime && isValidTime(metadata.endTime)
+      ? metadata.endTime
+      : addMinutes(row.hora_inicio, 30));
   const notes = metadata.notes || null;
   const status = normalizeStatus(row.estado);
 
@@ -150,6 +183,11 @@ function mapVisit(row, metadataByCitaId) {
     reason: row.motivo || null,
     notas: notes,
     notes,
+    consultorio_id: row.consultorio_id || null,
+    consultorioId: row.consultorio_id || null,
+    consultorio_nombre: row.consultorio_nombre || null,
+    consultorioNombre: row.consultorio_nombre || null,
+    room: row.consultorio_nombre || null,
     especialidad: row.especialidad || null,
     specialty: row.especialidad || null
   };
@@ -230,7 +268,7 @@ function handleDatabaseError(res, error, fallbackMessage) {
 
   if (error && error.code === 'ER_BAD_NULL_ERROR') {
     return res.status(400).json({
-      error: 'Falta un dato obligatorio para guardar la visita (revise doctorId, expedienteId/patientId, fecha y hora)',
+      error: 'Falta un dato obligatorio para guardar la visita (revise doctorId, consultorioId, fecha y horas)',
       detail: error.sqlMessage || error.message
     });
   }
@@ -245,6 +283,13 @@ function handleDatabaseError(res, error, fallbackMessage) {
   if (error && error.code === 'ER_TRUNCATED_WRONG_VALUE') {
     return res.status(400).json({
       error: 'Uno de los valores enviados tiene formato invalido para la base de datos',
+      detail: error.sqlMessage || error.message
+    });
+  }
+
+  if (error && error.code === 'ER_DUP_ENTRY') {
+    return res.status(409).json({
+      error: 'Conflicto de datos: ya existe una visita para el consultorio y fecha indicada',
       detail: error.sqlMessage || error.message
     });
   }
@@ -371,16 +416,6 @@ exports.createDoctorVisit = async (req, res) => {
     const doctorIdRaw = pickFirstDefined([body.doctorId, body.doctor_id]);
     const doctorId = doctorIdRaw ? Number(doctorIdRaw) : NaN;
 
-    const expedienteIdRaw = pickFirstDefined([
-      body.expedienteId,
-      body.expediente_id,
-      body.patientId,
-      body.patient_id,
-      body.pacienteId,
-      body.paciente_id
-    ]);
-    const expedienteId = normalizePositiveInt(expedienteIdRaw);
-
     const dateRaw = pickFirstDefined([body.date, body.fecha]);
     const date = normalizeDateInput(dateRaw);
 
@@ -390,10 +425,14 @@ exports.createDoctorVisit = async (req, res) => {
     const endTimeRaw = pickFirstDefined([body.endTime, body.hora_fin, body.end_time]);
     const endTime = normalizeTimeInput(endTimeRaw);
 
+    const consultorioIdRaw = pickFirstDefined([body.consultorioId, body.consultorio_id, body.roomId, body.room_id]);
+    const consultorioId = normalizePositiveInt(consultorioIdRaw);
+
     const reason = String(pickFirstDefined([body.reason, body.motivo]) || '').trim();
     const notes = String(pickFirstDefined([body.notes, body.notas]) || '').trim();
+    const estado = normalizeVisitStatus(pickFirstDefined([body.status, body.estado]));
 
-    console.log('📋 Datos normalizados:', { doctorId, expedienteId, date, startTime, endTime, reason, notes });
+    console.log('📋 Datos normalizados:', { doctorId, consultorioId, date, startTime, endTime, estado, reason, notes });
 
     if (!Number.isInteger(doctorId) || doctorId <= 0) {
       console.error('❌ doctorId inválido:', doctorIdRaw, '-> Number:', doctorId);
@@ -410,6 +449,14 @@ exports.createDoctorVisit = async (req, res) => {
         error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
         received: { dateRaw, date },
         acceptedFields: ['date', 'fecha']
+      });
+    }
+
+    if (!consultorioId) {
+      return res.status(400).json({
+        error: 'consultorioId es obligatorio y debe ser un entero positivo',
+        received: { consultorioIdRaw },
+        acceptedFields: ['consultorioId', 'consultorio_id', 'roomId', 'room_id']
       });
     }
 
@@ -431,16 +478,15 @@ exports.createDoctorVisit = async (req, res) => {
       });
     }
 
-    if (expedienteIdRaw && !expedienteId) {
-      return res.status(400).json({
-        error: 'expedienteId/patientId debe ser un entero positivo cuando se envia',
-        received: { expedienteIdRaw },
-        acceptedFields: ['expedienteId', 'expediente_id', 'patientId', 'patient_id', 'pacienteId', 'paciente_id']
-      });
-    }
-
     if (compareTimes(startTime, endTime) >= 0) {
       return res.status(400).json({ error: 'endTime debe ser mayor que startTime', startTime, endTime });
+    }
+
+    if (!isValidVisitStatus(estado)) {
+      return res.status(400).json({
+        error: 'estado/status invalido. Valores permitidos: programada, completada, cancelada',
+        received: { estado }
+      });
     }
 
     const doctor = await Secretaria.findDoctorById(doctorId);
@@ -464,16 +510,37 @@ exports.createDoctorVisit = async (req, res) => {
       return res.status(400).json({ error: 'El usuario indicado no pertenece al rol doctor', doctorId });
     }
 
-    const especialidadId = await Secretaria.findDoctorPrimarySpecialtyId(doctorId);
-    console.log('✅ Especialidad encontrada:', especialidadId);
+    const consultorio = await Secretaria.findConsultorioById(consultorioId);
+    if (!consultorio) {
+      return res.status(404).json({ error: 'Consultorio no encontrado', consultorioId });
+    }
+
+    const roomConflict = await Secretaria.findDoctorConflictByRoomAndDate({
+      consultorioId,
+      date,
+      doctorId
+    });
+    if (roomConflict) {
+      return res.status(409).json({
+        error: 'El consultorio ya tiene asignado otro doctor para esa fecha',
+        conflict: {
+          visitId: roomConflict.id,
+          doctorId: roomConflict.doctor_id,
+          doctorName: roomConflict.doctor_name,
+          date: roomConflict.fecha,
+          consultorioId: roomConflict.consultorio_id,
+          consultorioNombre: roomConflict.consultorio_nombre
+        }
+      });
+    }
 
     const createdVisitRow = await Secretaria.createDoctorVisit({
       doctorId,
-      expedienteId,
-      especialidadId,
+      consultorioId,
       date,
       startTime,
       endTime,
+      status: estado,
       reason,
       notes,
       createdBy
@@ -488,7 +555,7 @@ exports.createDoctorVisit = async (req, res) => {
       {
         ...createdVisitRow,
         motivo: createdVisitRow.motivo || reason,
-        estado: createdVisitRow.estado || 'pendiente'
+        estado: createdVisitRow.estado || estado
       },
       new Map([[createdVisitRow.id, { endTime, notes }]])
     );

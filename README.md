@@ -95,28 +95,30 @@ Rutas de secretaria:
 Body para `POST /api/secretaria/doctor-visits`:
 
 - `doctorId` (number, requerido)
+- `consultorioId` (number, requerido)
 - `date` (string `YYYY-MM-DD`, requerido)
 - `startTime` (string `HH:MM`, requerido)
 - `endTime` (string `HH:MM`, requerido)
+- `status` (string opcional: `programada`, `completada`, `cancelada`; por defecto `programada`)
 - `reason` (string, opcional)
 - `notes` (string, opcional)
-- `expedienteId` (number, opcional)
 
 Aliases aceptados para compatibilidad de payload:
 
 - `doctor_id` para `doctorId`
+- `consultorio_id`, `roomId`, `room_id` para `consultorioId`
 - `fecha` para `date`
 - `hora_inicio` o `start_time` para `startTime`
 - `hora_fin` o `end_time` para `endTime`
+- `estado` para `status`
 - `motivo` para `reason`
 - `notas` para `notes`
-- `expediente_id`, `patientId`, `patient_id`, `pacienteId`, `paciente_id` para `expedienteId`
 
 Notas de compatibilidad para secretaria:
 
 - Las respuestas incluyen alias en snake_case y camelCase para evitar problemas de integracion.
-- `consultorio` y `room` se devuelven como `null` porque el esquema actual no tiene una columna de consultorio.
-- `hora_fin` y `endTime` se guardan como metadato en `auditoria` para mantener compatibilidad con el frontend sin cambiar la tabla `citas`.
+- La creacion de visitas usa la tabla `visitas` y valida conflicto para evitar asignar dos doctores distintos al mismo consultorio en la misma fecha.
+- `hora_fin` y `endTime` se toman directamente de la tabla `visitas`.
 
 Preflight/CORS:
 

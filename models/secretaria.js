@@ -33,66 +33,111 @@ const Secretaria = {
     return rows.length ? rows[0].especialidad_id : null;
   },
 
+  async findConsultorioById(consultorioId) {
+    const rows = await db.query(
+      `SELECT c.id, c.nombre
+       FROM consultorios c
+       WHERE c.id = ?
+       LIMIT 1`,
+      [consultorioId]
+    );
+
+    return rows.length ? rows[0] : null;
+  },
+
+  async findDoctorConflictByRoomAndDate({ consultorioId, date, doctorId }) {
+    const rows = await db.query(
+      `SELECT v.id,
+              v.doctor_id,
+              u.nombre AS doctor_name,
+              v.consultorio_id,
+              c.nombre AS consultorio_nombre,
+              DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha
+       FROM visitas v
+       INNER JOIN usuarios u ON u.id = v.doctor_id
+       INNER JOIN consultorios c ON c.id = v.consultorio_id
+       WHERE v.consultorio_id = ?
+         AND v.fecha = ?
+         AND v.doctor_id <> ?
+       LIMIT 1`,
+      [consultorioId, date, doctorId]
+    );
+
+    return rows.length ? rows[0] : null;
+  },
+
   async findDoctorVisitRows(fromDate, toDate) {
     return db.query(
-      `SELECT c.id,
-              c.doctor_id,
+      `SELECT v.id,
+              v.doctor_id,
               u.nombre AS doctor_name,
-              c.fecha,
-              TIME_FORMAT(c.hora, '%H:%i') AS hora_inicio,
-              c.estado,
-              c.motivo,
+              DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha,
+              TIME_FORMAT(v.hora_inicio, '%H:%i') AS hora_inicio,
+              TIME_FORMAT(v.hora_fin, '%H:%i') AS hora_fin,
+              v.estado,
+              NULL AS motivo,
+              v.consultorio_id,
+              co.nombre AS consultorio_nombre,
               COALESCE(es.nombre, esp.specialty) AS especialidad
-       FROM citas c
-       INNER JOIN usuarios u ON u.id = c.doctor_id
-       LEFT JOIN especialidades es ON es.id = c.especialidad_id
+       FROM visitas v
+       INNER JOIN usuarios u ON u.id = v.doctor_id
+       INNER JOIN consultorios co ON co.id = v.consultorio_id
+       LEFT JOIN doctor_especialidad de1 ON de1.doctor_id = v.doctor_id
+       LEFT JOIN especialidades es ON es.id = de1.especialidad_id
        LEFT JOIN (
          SELECT de.doctor_id,
                 GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS specialty
          FROM doctor_especialidad de
          INNER JOIN especialidades e ON e.id = de.especialidad_id
          GROUP BY de.doctor_id
-       ) esp ON esp.doctor_id = c.doctor_id
-       WHERE c.fecha BETWEEN ? AND ?
-       ORDER BY c.fecha ASC, c.hora ASC, u.nombre ASC`,
+       ) esp ON esp.doctor_id = v.doctor_id
+       WHERE v.fecha BETWEEN ? AND ?
+       GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
+       ORDER BY v.fecha ASC, v.hora_inicio ASC, u.nombre ASC`,
       [fromDate, toDate]
     );
   },
 
   async findDoctorVisitRowsByDate(date) {
     return db.query(
-      `SELECT c.id,
-              c.doctor_id,
+      `SELECT v.id,
+              v.doctor_id,
               u.nombre AS doctor_name,
-              c.fecha,
-              TIME_FORMAT(c.hora, '%H:%i') AS hora_inicio,
-              c.estado,
-              c.motivo,
+              DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha,
+              TIME_FORMAT(v.hora_inicio, '%H:%i') AS hora_inicio,
+              TIME_FORMAT(v.hora_fin, '%H:%i') AS hora_fin,
+              v.estado,
+              NULL AS motivo,
+              v.consultorio_id,
+              co.nombre AS consultorio_nombre,
               COALESCE(es.nombre, esp.specialty) AS especialidad
-       FROM citas c
-       INNER JOIN usuarios u ON u.id = c.doctor_id
-       LEFT JOIN especialidades es ON es.id = c.especialidad_id
+       FROM visitas v
+       INNER JOIN usuarios u ON u.id = v.doctor_id
+       INNER JOIN consultorios co ON co.id = v.consultorio_id
+       LEFT JOIN doctor_especialidad de1 ON de1.doctor_id = v.doctor_id
+       LEFT JOIN especialidades es ON es.id = de1.especialidad_id
        LEFT JOIN (
          SELECT de.doctor_id,
                 GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS specialty
          FROM doctor_especialidad de
          INNER JOIN especialidades e ON e.id = de.especialidad_id
          GROUP BY de.doctor_id
-       ) esp ON esp.doctor_id = c.doctor_id
-       WHERE c.fecha = ?
-       ORDER BY c.hora ASC, u.nombre ASC`,
+       ) esp ON esp.doctor_id = v.doctor_id
+       WHERE v.fecha = ?
+       GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
+       ORDER BY v.hora_inicio ASC, u.nombre ASC`,
       [date]
     );
   },
 
   async findDoctorVisitsSummaryByMonth(month) {
     return db.query(
-      `SELECT DATE_FORMAT(c.fecha, '%Y-%m-%d') AS fecha,
+      `SELECT DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha,
               COUNT(*) AS cantidad
-       FROM citas c
-       WHERE DATE_FORMAT(c.fecha, '%Y-%m') = ?
-       GROUP BY c.fecha
-       ORDER BY c.fecha ASC`,
+       FROM visitas v
+       WHERE DATE_FORMAT(v.fecha, '%Y-%m') = ?
+       GROUP BY v.fecha
+       ORDER BY v.fecha ASC`,
       [month]
     );
   },
@@ -106,7 +151,7 @@ const Secretaria = {
     return db.query(
       `SELECT id, registro_id AS cita_id, descripcion
        FROM auditoria
-       WHERE tabla_afectada = 'citas'
+       WHERE tabla_afectada IN ('visitas', 'citas')
          AND registro_id IN (${placeholders})
        ORDER BY id DESC`,
       citaIds
@@ -115,17 +160,17 @@ const Secretaria = {
 
   async createDoctorVisit(payload) {
     console.log('📝 Creando visita con payload:', JSON.stringify(payload));
-    
+
     const insertResult = await db.query(
-      `INSERT INTO citas (expediente_id, doctor_id, especialidad_id, fecha, hora, estado, motivo)
-       VALUES (?, ?, ?, ?, ?, 'pendiente', ?)`,
+      `INSERT INTO visitas (doctor_id, consultorio_id, fecha, hora_inicio, hora_fin, estado, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [
-        payload.expedienteId || null,
         payload.doctorId,
-        payload.especialidadId || null,
+        payload.consultorioId,
         payload.date,
         payload.startTime,
-        payload.reason || null
+        payload.endTime,
+        payload.status || 'programada'
       ]
     );
 
@@ -136,59 +181,68 @@ const Secretaria = {
       throw new Error('No se obtuvo el ID de la cita creada');
     }
 
-    const citaId = insertResult.insertId;
-    console.log('✅ Cita creada con id:', citaId);
+    const visitaId = insertResult.insertId;
+    console.log('✅ Visita creada con id:', visitaId);
 
     if (payload.createdBy) {
       try {
         await db.query(
           `INSERT INTO auditoria (usuario_id, tabla_afectada, accion, registro_id, descripcion)
-           VALUES (?, 'citas', 'INSERT', ?, ?)`,
+           VALUES (?, 'visitas', 'INSERT', ?, ?)`,
           [
             payload.createdBy,
-            citaId,
+            visitaId,
             JSON.stringify({
               source: 'secretaria-doctor-visit',
+              consultorioId: payload.consultorioId,
               endTime: payload.endTime,
-              notes: payload.notes || null
+              notes: payload.notes || null,
+              reason: payload.reason || null,
+              status: payload.status || 'programada'
             })
           ]
         );
 
-        console.log('✅ Auditoría registrada para cita:', citaId);
+        console.log('✅ Auditoría registrada para visita:', visitaId);
       } catch (auditError) {
-        // La cita ya fue creada; la auditoria se trata como best-effort.
-        console.warn('⚠️ No se pudo registrar auditoría para cita:', citaId, auditError.code || auditError.message);
+        // La visita ya fue creada; la auditoria se trata como best-effort.
+        console.warn('⚠️ No se pudo registrar auditoría para visita:', visitaId, auditError.code || auditError.message);
       }
     } else {
-      console.warn('⚠️ Se omitió auditoría por falta de usuario creador válido para cita:', citaId);
+      console.warn('⚠️ Se omitió auditoría por falta de usuario creador válido para visita:', visitaId);
     }
 
     const rows = await db.query(
-      `SELECT c.id,
-              c.doctor_id,
+      `SELECT v.id,
+              v.doctor_id,
               u.nombre AS doctor_name,
-              c.fecha,
-              TIME_FORMAT(c.hora, '%H:%i') AS hora_inicio,
-              c.estado,
-              c.motivo,
+              DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha,
+              TIME_FORMAT(v.hora_inicio, '%H:%i') AS hora_inicio,
+              TIME_FORMAT(v.hora_fin, '%H:%i') AS hora_fin,
+              v.estado,
+              NULL AS motivo,
+              v.consultorio_id,
+              co.nombre AS consultorio_nombre,
               COALESCE(es.nombre, esp.specialty) AS especialidad
-       FROM citas c
-       INNER JOIN usuarios u ON u.id = c.doctor_id
-       LEFT JOIN especialidades es ON es.id = c.especialidad_id
+       FROM visitas v
+       INNER JOIN usuarios u ON u.id = v.doctor_id
+       INNER JOIN consultorios co ON co.id = v.consultorio_id
+       LEFT JOIN doctor_especialidad de1 ON de1.doctor_id = v.doctor_id
+       LEFT JOIN especialidades es ON es.id = de1.especialidad_id
        LEFT JOIN (
          SELECT de.doctor_id,
                 GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS specialty
          FROM doctor_especialidad de
          INNER JOIN especialidades e ON e.id = de.especialidad_id
          GROUP BY de.doctor_id
-       ) esp ON esp.doctor_id = c.doctor_id
-       WHERE c.id = ?
+       ) esp ON esp.doctor_id = v.doctor_id
+       WHERE v.id = ?
+       GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
        LIMIT 1`,
-      [citaId]
+      [visitaId]
     );
 
-    console.log('✅ Cita recuperada desde BD:', rows.length > 0 ? rows[0].id : 'NO ENCONTRADA');
+    console.log('✅ Visita recuperada desde BD:', rows.length > 0 ? rows[0].id : 'NO ENCONTRADA');
     return rows.length ? rows[0] : null;
   }
 };
