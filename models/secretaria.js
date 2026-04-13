@@ -20,19 +20,6 @@ const Secretaria = {
     return rows.length ? rows[0] : null;
   },
 
-  async findDoctorPrimarySpecialtyId(doctorId) {
-    const rows = await db.query(
-      `SELECT de.especialidad_id
-       FROM doctor_especialidad de
-       WHERE de.doctor_id = ?
-       ORDER BY de.especialidad_id ASC
-       LIMIT 1`,
-      [doctorId]
-    );
-
-    return rows.length ? rows[0].especialidad_id : null;
-  },
-
   async findConsultorioById(consultorioId) {
     const rows = await db.query(
       `SELECT c.id, c.nombre
@@ -43,6 +30,14 @@ const Secretaria = {
     );
 
     return rows.length ? rows[0] : null;
+  },
+
+  async findAllConsultorios() {
+    return db.query(
+      `SELECT c.id, c.nombre
+       FROM consultorios c
+       ORDER BY c.nombre ASC`
+    );
   },
 
   async findDoctorConflictByRoomAndDate({ consultorioId, date, doctorId }) {
@@ -64,38 +59,6 @@ const Secretaria = {
     );
 
     return rows.length ? rows[0] : null;
-  },
-
-  async findDoctorVisitRows(fromDate, toDate) {
-    return db.query(
-      `SELECT v.id,
-              v.doctor_id,
-              u.nombre AS doctor_name,
-              DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha,
-              TIME_FORMAT(v.hora_inicio, '%H:%i') AS hora_inicio,
-              TIME_FORMAT(v.hora_fin, '%H:%i') AS hora_fin,
-              v.estado,
-              NULL AS motivo,
-              v.consultorio_id,
-              co.nombre AS consultorio_nombre,
-              COALESCE(es.nombre, esp.specialty) AS especialidad
-       FROM visitas v
-       INNER JOIN usuarios u ON u.id = v.doctor_id
-       INNER JOIN consultorios co ON co.id = v.consultorio_id
-       LEFT JOIN doctor_especialidad de1 ON de1.doctor_id = v.doctor_id
-       LEFT JOIN especialidades es ON es.id = de1.especialidad_id
-       LEFT JOIN (
-         SELECT de.doctor_id,
-                GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS specialty
-         FROM doctor_especialidad de
-         INNER JOIN especialidades e ON e.id = de.especialidad_id
-         GROUP BY de.doctor_id
-       ) esp ON esp.doctor_id = v.doctor_id
-       WHERE v.fecha BETWEEN ? AND ?
-       GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
-       ORDER BY v.fecha ASC, v.hora_inicio ASC, u.nombre ASC`,
-      [fromDate, toDate]
-    );
   },
 
   async findDoctorVisitRowsByDate(date) {
@@ -127,18 +90,6 @@ const Secretaria = {
        GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
        ORDER BY v.hora_inicio ASC, u.nombre ASC`,
       [date]
-    );
-  },
-
-  async findDoctorVisitsSummaryByMonth(month) {
-    return db.query(
-      `SELECT DATE_FORMAT(v.fecha, '%Y-%m-%d') AS fecha,
-              COUNT(*) AS cantidad
-       FROM visitas v
-       WHERE DATE_FORMAT(v.fecha, '%Y-%m') = ?
-       GROUP BY v.fecha
-       ORDER BY v.fecha ASC`,
-      [month]
     );
   },
 

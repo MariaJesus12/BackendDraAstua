@@ -193,66 +193,6 @@ function mapVisit(row, metadataByCitaId) {
   };
 }
 
-function groupAgendaItems(visits) {
-  const agendasByKey = new Map();
-
-  for (const visit of visits) {
-    const key = `${visit.doctor_id}|${visit.fecha}|${visit.especialidad || ''}`;
-    const current = agendasByKey.get(key);
-
-    if (!current) {
-      agendasByKey.set(key, {
-        id: visit.id,
-        doctor_id: visit.doctor_id,
-        doctorId: visit.doctorId,
-        doctor_name: visit.doctor_name,
-        doctorName: visit.doctorName,
-        especialidad: visit.especialidad,
-        specialty: visit.specialty,
-        consultorio: null,
-        room: null,
-        fecha: visit.fecha,
-        date: visit.date,
-        hora_inicio: visit.hora_inicio,
-        startTime: visit.startTime,
-        hora_fin: visit.hora_fin,
-        endTime: visit.endTime,
-        total_citas: 1,
-        totalAppointments: 1
-      });
-      continue;
-    }
-
-    if (visit.hora_inicio < current.hora_inicio) {
-      current.hora_inicio = visit.hora_inicio;
-      current.startTime = visit.startTime;
-      current.id = visit.id;
-    }
-
-    if (visit.hora_fin > current.hora_fin) {
-      current.hora_fin = visit.hora_fin;
-      current.endTime = visit.endTime;
-    }
-
-    current.total_citas += 1;
-    current.totalAppointments += 1;
-  }
-
-  return Array.from(agendasByKey.values()).sort((a, b) => {
-    const dateComparison = String(a.fecha).localeCompare(String(b.fecha));
-    if (dateComparison !== 0) {
-      return dateComparison;
-    }
-
-    const doctorComparison = String(a.doctor_name).localeCompare(String(b.doctor_name));
-    if (doctorComparison !== 0) {
-      return doctorComparison;
-    }
-
-    return String(a.hora_inicio).localeCompare(String(b.hora_inicio));
-  });
-}
-
 function handleDatabaseError(res, error, fallbackMessage) {
   if (error && error.code === 'ER_NO_SUCH_TABLE') {
     return res.status(500).json({ error: 'Falta una tabla requerida en la base de datos para esta operacion' });
@@ -298,47 +238,6 @@ function handleDatabaseError(res, error, fallbackMessage) {
   return res.status(500).json({ error: fallbackMessage });
 }
 
-exports.getAgendas = async (req, res) => {
-  try {
-    console.log('📅 getAgendas llamado con query:', req.query);
-    
-    const fromDate = req.query.fromDate || req.query.from_date;
-    const toDate = req.query.toDate || req.query.to_date;
-    
-    console.log('📝 Fechas normalizadas:', { fromDate, toDate });
-
-    if (!fromDate || !toDate || !isValidDate(fromDate) || !isValidDate(toDate)) {
-      console.log('❌ Fechas inválidas:', { fromDate, toDate });
-      return res.status(400).json({
-        error: 'fromDate y toDate son obligatorios y deben tener formato YYYY-MM-DD',
-        received: { fromDate, toDate }
-      });
-    }
-
-    if (String(fromDate) > String(toDate)) {
-      return res.status(400).json({ error: 'fromDate no puede ser mayor que toDate' });
-    }
-
-    console.log('🔍 Buscando citas entre', fromDate, 'y', toDate);
-    const rows = await Secretaria.findDoctorVisitRows(fromDate, toDate);
-    console.log('✅ Citas encontradas:', rows.length);
-    
-    if (!rows.length) {
-      return res.status(200).json({ agendas: [] });
-    }
-    
-    const metadataRows = await Secretaria.findAuditMetadataByCitaIds(rows.map((row) => row.id));
-    const metadataByCitaId = parseAuditMetadataRows(metadataRows);
-    const visits = rows.map((row) => mapVisit(row, metadataByCitaId));
-    const agendas = groupAgendaItems(visits);
-
-    console.log('✅ Agendas agrupadas:', agendas.length);
-    return res.status(200).json({ agendas });
-  } catch (error) {
-    console.error('❌ Error en getAgendas:', error.message, error.stack);
-    return handleDatabaseError(res, error, 'Error interno obteniendo agendas');
-  }
-};
 
 exports.getDoctorVisits = async (req, res) => {
   try {
@@ -351,13 +250,14 @@ exports.getDoctorVisits = async (req, res) => {
       console.log('❌ Fecha inválida:', date);
       return res.status(400).json({
         error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
-        received: { date }
+        received: { date },
+        acceptedFields: ['date', 'fecha']
       });
     }
 
-    console.log('🔍 Buscando citas para:', date);
+    console.log('🔍 Buscando visitas para:', date);
     const rows = await Secretaria.findDoctorVisitRowsByDate(date);
-    console.log('✅ Citas encontradas:', rows.length);
+    console.log('✅ Visitas encontradas:', rows.length);
     
     if (!rows.length) {
       return res.status(200).json({ visits: [] });
@@ -367,7 +267,7 @@ exports.getDoctorVisits = async (req, res) => {
     const metadataByCitaId = parseAuditMetadataRows(metadataRows);
     const visits = rows.map((row) => mapVisit(row, metadataByCitaId));
 
-    console.log('✅ Visitas mappadas:', visits.length);
+    console.log('✅ Visitas mappadas y retornadas:', visits.length);
     return res.status(200).json({ visits });
   } catch (error) {
     console.error('❌ Error en getDoctorVisits:', error.message, error.stack);
@@ -375,24 +275,6 @@ exports.getDoctorVisits = async (req, res) => {
   }
 };
 
-exports.getDoctorVisitsSummary = async (req, res) => {
-  try {
-    const { month } = req.query;
-    if (!isValidMonth(month)) {
-      return res.status(400).json({ error: 'month es obligatorio y debe tener formato YYYY-MM' });
-    }
-
-    const rows = await Secretaria.findDoctorVisitsSummaryByMonth(month);
-    const summary = {};
-    for (const row of rows) {
-      summary[row.fecha] = Number(row.cantidad);
-    }
-
-    return res.status(200).json(summary);
-  } catch (error) {
-    return handleDatabaseError(res, error, 'Error interno obteniendo resumen de visitas');
-  }
-};
 
 exports.getDoctors = async (req, res) => {
   try {
@@ -405,6 +287,21 @@ exports.getDoctors = async (req, res) => {
     });
   } catch (error) {
     return handleDatabaseError(res, error, 'Error interno obteniendo doctores');
+  }
+};
+
+exports.getDoctorConsultorios = async (req, res) => {
+  try {
+    console.log('🏥 getDoctorConsultorios llamado');
+    const consultorios = await Secretaria.findAllConsultorios();
+
+    return res.status(200).json({
+      consultorios,
+      items: consultorios,
+      total: consultorios.length
+    });
+  } catch (error) {
+    return handleDatabaseError(res, error, 'Error interno obteniendo consultorios');
   }
 };
 

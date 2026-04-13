@@ -87,10 +87,9 @@ Rutas de secretaria:
 
 - `GET /api/secretaria/doctors` (requiere `Authorization: Bearer <token>`)
 - `GET /api/secretaria/getDoctors` (requiere `Authorization: Bearer <token>`)
-- `GET /api/secretaria/agendas?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
-- `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
-- `GET /api/secretaria/doctor-visits/summary?month=YYYY-MM` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
-- `POST /api/secretaria/doctor-visits` (requiere `Authorization: Bearer <token>` y rol `secretaria` o `admin`)
+- `GET /api/secretaria/consultorios` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`)
+- `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`)
+- `POST /api/secretaria/doctor-visits` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`)
 
 Body para `POST /api/secretaria/doctor-visits`:
 
@@ -114,10 +113,20 @@ Aliases aceptados para compatibilidad de payload:
 - `motivo` para `reason`
 - `notas` para `notes`
 
+Respuesta de `GET /api/secretaria/consultorios`:
+
+- `consultorios` con el listado de consultorios (id, nombre)
+- `items` alias del mismo listado
+- `total` cantidad de consultorios
+
+Respuesta de `GET /api/secretaria/doctor-visits`:
+
+- `visits` con las visitas del día especificado, incluyendo consultorio, doctor, horarios y estado
+
 Notas de compatibilidad para secretaria:
 
-- Las respuestas incluyen alias en snake_case y camelCase para evitar problemas de integracion.
-- La creacion de visitas usa la tabla `visitas` y valida conflicto para evitar asignar dos doctores distintos al mismo consultorio en la misma fecha.
+- Las respuestas incluyen alias en snake_case y camelCase para evitar problemas de integración.
+- La creación de visitas valida conflictos para evitar asignar dos doctores distintos al mismo consultorio en la misma fecha.
 - `hora_fin` y `endTime` se toman directamente de la tabla `visitas`.
 
 Preflight/CORS:
