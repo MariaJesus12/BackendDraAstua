@@ -85,10 +85,14 @@ Payload recomendado para crear paciente:
 
 Rutas de secretaria:
 
-- `GET /api/secretaria/doctors` (requiere `Authorization: Bearer <token>`)
-- `GET /api/secretaria/getDoctors` (requiere `Authorization: Bearer <token>`)
-- `GET /api/secretaria/consultorios` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`)
-- `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`)
+- `GET /api/secretaria/doctors` (requiere `Authorization: Bearer <token>`) – Retorna doctores con objeto completo (doctors, items, total)
+- `GET /api/secretaria/getDoctors` (requiere `Authorization: Bearer <token>`) – Alias de doctors
+- `GET /api/secretaria/getDoctorsList` (requiere `Authorization: Bearer <token>`) – Retorna array simple de doctores
+- `GET /api/secretaria/consultorios` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`) – Retorna consultorios con objeto completo (consultorios, items, total)
+- `GET /api/secretaria/getConsultorios` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`) – Alias de consultorios
+- `GET /api/secretaria/getConsultoriosList` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`) – Retorna array simple de consultorios
+- `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`) – Visitas por fecha usando query parameter
+- `GET /api/secretaria/doctor-visits/:date` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`) – Visitas por fecha usando URL parameter (e.g., `/doctor-visits/2026-04-12`)
 - `POST /api/secretaria/doctor-visits` (requiere `Authorization: Bearer <token>` y rol `secretaria`, `admin` o `administrador`)
 
 Body para `POST /api/secretaria/doctor-visits`:
@@ -113,15 +117,30 @@ Aliases aceptados para compatibilidad de payload:
 - `motivo` para `reason`
 - `notas` para `notes`
 
-Respuesta de `GET /api/secretaria/consultorios`:
+Respuesta de `GET /api/secretaria/doctors` o `GET /api/secretaria/getDoctors`:
+
+- `doctors` con el listado de doctores (array)
+- `items` alias del mismo listado
+- `total` cantidad de doctores
+
+Respuesta de `GET /api/secretaria/getDoctorsList`:
+
+- Retorna directamente el array de doctores sin envoltura
+
+Respuesta de `GET /api/secretaria/consultorios`, `GET /api/secretaria/getConsultorios`:
 
 - `consultorios` con el listado de consultorios (id, nombre)
 - `items` alias del mismo listado
 - `total` cantidad de consultorios
 
-Respuesta de `GET /api/secretaria/doctor-visits`:
+Respuesta de `GET /api/secretaria/getConsultoriosList`:
 
-- `visits` con las visitas del día especificado, incluyendo consultorio, doctor, horarios y estado
+- Retorna directamente el array de consultorios sin envoltura
+
+Respuesta de `GET /api/secretaria/doctor-visits?date=YYYY-MM-DD` o `GET /api/secretaria/doctor-visits/:date`:
+
+- Retorna array directo de visitas del día especificado, incluyendo consultorio, doctor, horarios y estado
+- Si no hay visitas, retorna array vacío `[]`
 
 Notas de compatibilidad para secretaria:
 

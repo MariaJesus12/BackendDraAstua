@@ -305,6 +305,59 @@ exports.getDoctorConsultorios = async (req, res) => {
   }
 };
 
+exports.getDoctorsList = async (req, res) => {
+  try {
+    console.log('👨‍⚕️ getDoctorsList llamado (retorna array simple)');
+    const doctors = await Doctor.findAll();
+    return res.status(200).json(doctors);
+  } catch (error) {
+    return handleDatabaseError(res, error, 'Error interno obteniendo lista de doctores');
+  }
+};
+
+exports.getDoctorConsultoriosList = async (req, res) => {
+  try {
+    console.log('🏥 getDoctorConsultoriosList llamado (retorna array simple)');
+    const consultorios = await Secretaria.findAllConsultorios();
+    return res.status(200).json(consultorios);
+  } catch (error) {
+    return handleDatabaseError(res, error, 'Error interno obteniendo lista de consultorios');
+  }
+};
+
+exports.getDoctorVisitsByDate = async (req, res) => {
+  try {
+    const { date } = req.params;
+    console.log('📅 getDoctorVisitsByDate llamado para fecha:', date);
+
+    if (!date || !isValidDate(date)) {
+      console.log('❌ Fecha inválida en URL:', date);
+      return res.status(400).json({
+        error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
+        received: { date }
+      });
+    }
+
+    console.log('🔍 Buscando visitas para:', date);
+    const rows = await Secretaria.findDoctorVisitRowsByDate(date);
+    console.log('✅ Visitas encontradas:', rows.length);
+
+    if (!rows.length) {
+      return res.status(200).json([]);
+    }
+
+    const metadataRows = await Secretaria.findAuditMetadataByCitaIds(rows.map((row) => row.id));
+    const metadataByCitaId = parseAuditMetadataRows(metadataRows);
+    const visits = rows.map((row) => mapVisit(row, metadataByCitaId));
+
+    console.log('✅ Visitas mapeadas:', visits.length);
+    return res.status(200).json(visits);
+  } catch (error) {
+    console.error('❌ Error en getDoctorVisitsByDate:', error.message, error.stack);
+    return handleDatabaseError(res, error, 'Error interno obteniendo visitas por fecha');
+  }
+};
+
 exports.createDoctorVisit = async (req, res) => {
   try {
     const body = req.body || {};
