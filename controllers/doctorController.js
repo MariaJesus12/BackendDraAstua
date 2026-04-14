@@ -134,3 +134,16 @@ exports.searchDoctors = async (req, res) => {
     return handleDbError(res, error, 'doctores');
   }
 };
+
+exports.getEspecialidades = async (req, res) => {
+  try {
+    const especialidades = await Doctor.findEspecialidadesCatalog();
+    return res.status(200).json({
+      especialidades,
+      items: especialidades,
+      total: especialidades.length
+    });
+  } catch (error) {
+    return handleDbError(res, error, 'especialidades');
+  }
+};

@@ -301,6 +301,14 @@ const Doctor = {
       items: doctorRows.map((row) => mapDoctorRow(row)),
       total: Number(totalRows[0] && totalRows[0].total ? totalRows[0].total : 0)
     };
+  },
+
+  async findEspecialidadesCatalog() {
+    return db.query(
+      `SELECT id, nombre
+       FROM especialidades
+       ORDER BY nombre ASC`
+    );
   }
 };
 
