@@ -163,6 +163,42 @@ const Doctor = {
     return doctorRows.map((row) => mapDoctorRow(row));
   },
 
+  async findAllPaginated({ page = 1, limit = 20 } = {}) {
+    const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 20;
+    const offset = (safePage - 1) * safeLimit;
+
+    const totalRows = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM usuarios u
+       INNER JOIN roles r ON r.id = u.rol_id
+       WHERE LOWER(r.nombre) = 'doctor'`
+    );
+
+    const doctorRows = await db.query(
+      `SELECT u.id,
+              u.nombre,
+              u.email,
+              u.identificacion,
+              u.activo,
+              r.nombre AS rol,
+              GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS especialidades_nombres
+       FROM usuarios u
+       INNER JOIN roles r ON r.id = u.rol_id
+       LEFT JOIN doctor_especialidad de ON de.doctor_id = u.id
+       LEFT JOIN especialidades e ON e.id = de.especialidad_id
+       WHERE LOWER(r.nombre) = 'doctor'
+       GROUP BY u.id, u.nombre, u.email, u.identificacion, u.activo, r.nombre
+       ORDER BY u.id DESC
+       LIMIT ${offset}, ${safeLimit}`
+    );
+
+    return {
+      items: doctorRows.map((row) => mapDoctorRow(row)),
+      total: Number(totalRows[0] && totalRows[0].total ? totalRows[0].total : 0)
+    };
+  },
+
   async findById(id) {
     const doctorRows = await db.query(
       `SELECT u.id, u.nombre, u.email, u.identificacion, u.activo, r.nombre AS rol
@@ -179,6 +215,92 @@ const Doctor = {
 
     const especialidades = await findEspecialidadesByDoctorId(id);
     return mapDoctorRow(doctorRows[0], especialidades);
+  },
+
+  async search({ nombre, identificacion }) {
+    const conditions = ["LOWER(r.nombre) = 'doctor'"];
+    const params = [];
+
+    if (nombre) {
+      conditions.push('u.nombre LIKE ?');
+      params.push(`%${nombre}%`);
+    }
+
+    if (identificacion) {
+      conditions.push('u.identificacion LIKE ?');
+      params.push(`%${identificacion}%`);
+    }
+
+    const doctorRows = await db.query(
+      `SELECT u.id,
+              u.nombre,
+              u.email,
+              u.identificacion,
+              u.activo,
+              r.nombre AS rol,
+              GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS especialidades_nombres
+       FROM usuarios u
+       INNER JOIN roles r ON r.id = u.rol_id
+       LEFT JOIN doctor_especialidad de ON de.doctor_id = u.id
+       LEFT JOIN especialidades e ON e.id = de.especialidad_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY u.id, u.nombre, u.email, u.identificacion, u.activo, r.nombre
+       ORDER BY u.nombre ASC`,
+      params
+    );
+
+    return doctorRows.map((row) => mapDoctorRow(row));
+  },
+
+  async searchPaginated({ nombre, identificacion, page = 1, limit = 20 }) {
+    const conditions = ["LOWER(r.nombre) = 'doctor'"];
+    const params = [];
+
+    if (nombre) {
+      conditions.push('u.nombre LIKE ?');
+      params.push(`%${nombre}%`);
+    }
+
+    if (identificacion) {
+      conditions.push('u.identificacion LIKE ?');
+      params.push(`%${identificacion}%`);
+    }
+
+    const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 20;
+    const offset = (safePage - 1) * safeLimit;
+
+    const totalRows = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM usuarios u
+       INNER JOIN roles r ON r.id = u.rol_id
+       WHERE ${conditions.join(' AND ')}`,
+      params
+    );
+
+    const doctorRows = await db.query(
+      `SELECT u.id,
+              u.nombre,
+              u.email,
+              u.identificacion,
+              u.activo,
+              r.nombre AS rol,
+              GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS especialidades_nombres
+       FROM usuarios u
+       INNER JOIN roles r ON r.id = u.rol_id
+       LEFT JOIN doctor_especialidad de ON de.doctor_id = u.id
+       LEFT JOIN especialidades e ON e.id = de.especialidad_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY u.id, u.nombre, u.email, u.identificacion, u.activo, r.nombre
+       ORDER BY u.id DESC
+       LIMIT ${offset}, ${safeLimit}`,
+      params
+    );
+
+    return {
+      items: doctorRows.map((row) => mapDoctorRow(row)),
+      total: Number(totalRows[0] && totalRows[0].total ? totalRows[0].total : 0)
+    };
   }
 };
 

@@ -1,8 +1,14 @@
 const Patient = require('../models/patient');
+const PAGE_SIZE = 20;
 
 function parseId(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function parsePage(value) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
 }
 
 function handleDbError(res, error, entityName) {
@@ -54,8 +60,16 @@ exports.createPatient = async (req, res) => {
 
 exports.listPatients = async (req, res) => {
   try {
-    const patients = await Patient.findAll();
-    return res.status(200).json({ patients });
+    const page = parsePage(req.query && req.query.page);
+    const { items: patients, total } = await Patient.findAllPaginated({ page, limit: PAGE_SIZE });
+    return res.status(200).json({
+      patients,
+      items: patients,
+      total,
+      page,
+      limit: PAGE_SIZE,
+      totalPages: Math.ceil(total / PAGE_SIZE)
+    });
   } catch (error) {
     return handleDbError(res, error, 'pacientes');
   }
@@ -74,6 +88,35 @@ exports.getPatientById = async (req, res) => {
     }
 
     return res.status(200).json({ patient });
+  } catch (error) {
+    return handleDbError(res, error, 'pacientes');
+  }
+};
+
+exports.searchPatients = async (req, res) => {
+  try {
+    const nombre = req.query && req.query.nombre != null ? String(req.query.nombre).trim() : '';
+    const identificacion = req.query && req.query.identificacion != null ? String(req.query.identificacion).trim() : '';
+    const page = parsePage(req.query && req.query.page);
+
+    if (!nombre && !identificacion) {
+      return res.status(400).json({ error: 'Debe enviar nombre o identificacion para buscar pacientes' });
+    }
+
+    const { items: patients, total } = await Patient.searchPaginated({
+      nombre,
+      identificacion,
+      page,
+      limit: PAGE_SIZE
+    });
+    return res.status(200).json({
+      patients,
+      items: patients,
+      total,
+      page,
+      limit: PAGE_SIZE,
+      totalPages: Math.ceil(total / PAGE_SIZE)
+    });
   } catch (error) {
     return handleDbError(res, error, 'pacientes');
   }

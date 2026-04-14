@@ -1,8 +1,14 @@
 const Doctor = require('../models/doctor');
+const PAGE_SIZE = 20;
 
 function parseId(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function parsePage(value) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
 }
 
 function handleDbError(res, error, entityName) {
@@ -65,12 +71,16 @@ exports.createDoctor = async (req, res) => {
 exports.listDoctors = async (req, res) => {
   try {
     console.log('👨‍⚕️ listDoctors llamado');
-    const doctors = await Doctor.findAll();
+    const page = parsePage(req.query && req.query.page);
+    const { items: doctors, total } = await Doctor.findAllPaginated({ page, limit: PAGE_SIZE });
     console.log('✅ Doctores encontrados:', doctors.length);
     return res.status(200).json({
       doctors,
       items: doctors,
-      total: doctors.length
+      total,
+      page,
+      limit: PAGE_SIZE,
+      totalPages: Math.ceil(total / PAGE_SIZE)
     });
   } catch (error) {
     console.error('❌ Error en listDoctors:', error.message, error.stack);
@@ -91,6 +101,35 @@ exports.getDoctorById = async (req, res) => {
     }
 
     return res.status(200).json({ doctor });
+  } catch (error) {
+    return handleDbError(res, error, 'doctores');
+  }
+};
+
+exports.searchDoctors = async (req, res) => {
+  try {
+    const nombre = req.query && req.query.nombre != null ? String(req.query.nombre).trim() : '';
+    const identificacion = req.query && req.query.identificacion != null ? String(req.query.identificacion).trim() : '';
+    const page = parsePage(req.query && req.query.page);
+
+    if (!nombre && !identificacion) {
+      return res.status(400).json({ error: 'Debe enviar nombre o identificacion para buscar doctores' });
+    }
+
+    const { items: doctors, total } = await Doctor.searchPaginated({
+      nombre,
+      identificacion,
+      page,
+      limit: PAGE_SIZE
+    });
+    return res.status(200).json({
+      doctors,
+      items: doctors,
+      total,
+      page,
+      limit: PAGE_SIZE,
+      totalPages: Math.ceil(total / PAGE_SIZE)
+    });
   } catch (error) {
     return handleDbError(res, error, 'doctores');
   }

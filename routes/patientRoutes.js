@@ -7,6 +7,8 @@ router.post('/', authMiddleware, patientController.createPatient);
 router.post('/createPatient', authMiddleware, patientController.createPatient);
 router.get('/', authMiddleware, patientController.listPatients);
 router.get('/getPatients', authMiddleware, patientController.listPatients);
+router.get('/search', authMiddleware, patientController.searchPatients);
+router.get('/searchPatients', authMiddleware, patientController.searchPatients);
 router.get('/medicamentos', authMiddleware, patientController.getMedicamentos);
 router.get('/getMedicamentos', authMiddleware, patientController.getMedicamentos);
 router.get('/alergias', authMiddleware, patientController.getAlergias);

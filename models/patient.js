@@ -265,6 +265,25 @@ const Patient = {
     );
   },
 
+  async findAllPaginated({ page = 1, limit = 20 } = {}) {
+    const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 20;
+    const offset = (safePage - 1) * safeLimit;
+
+    const totalRows = await db.query('SELECT COUNT(*) AS total FROM pacientes');
+    const rows = await db.query(
+      `SELECT id, nombre, identificacion, email, telefono, fecha_nacimiento, direccion, activo
+       FROM pacientes
+       ORDER BY id DESC
+       LIMIT ${offset}, ${safeLimit}`
+    );
+
+    return {
+      items: rows,
+      total: Number(totalRows[0] && totalRows[0].total ? totalRows[0].total : 0)
+    };
+  },
+
   async findById(id) {
     const rows = await db.query(
       `SELECT id, nombre, identificacion, email, telefono, fecha_nacimiento, direccion, activo
@@ -282,6 +301,85 @@ const Patient = {
     return {
       ...rows[0],
       ...relations
+    };
+  },
+
+  async search({ nombre, identificacion }) {
+    const conditions = [];
+    const params = [];
+
+    if (nombre) {
+      conditions.push('p.nombre LIKE ?');
+      params.push(`%${nombre}%`);
+    }
+
+    if (identificacion) {
+      conditions.push('p.identificacion LIKE ?');
+      params.push(`%${identificacion}%`);
+    }
+
+    const rows = await db.query(
+      `SELECT p.id, p.nombre, p.identificacion, p.email, p.telefono, p.fecha_nacimiento, p.direccion, p.activo
+       FROM pacientes p
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY p.nombre ASC`,
+      params
+    );
+
+    const patientsWithRelations = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        ...(await getPatientRelations(row.id))
+      }))
+    );
+
+    return patientsWithRelations;
+  },
+
+  async searchPaginated({ nombre, identificacion, page = 1, limit = 20 }) {
+    const conditions = [];
+    const params = [];
+
+    if (nombre) {
+      conditions.push('p.nombre LIKE ?');
+      params.push(`%${nombre}%`);
+    }
+
+    if (identificacion) {
+      conditions.push('p.identificacion LIKE ?');
+      params.push(`%${identificacion}%`);
+    }
+
+    const safePage = Number.isInteger(page) && page > 0 ? page : 1;
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 20;
+    const offset = (safePage - 1) * safeLimit;
+
+    const totalRows = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM pacientes p
+       WHERE ${conditions.join(' AND ')}`,
+      params
+    );
+
+    const rows = await db.query(
+      `SELECT p.id, p.nombre, p.identificacion, p.email, p.telefono, p.fecha_nacimiento, p.direccion, p.activo
+       FROM pacientes p
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY p.id DESC
+       LIMIT ${offset}, ${safeLimit}`,
+      params
+    );
+
+    const patientsWithRelations = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        ...(await getPatientRelations(row.id))
+      }))
+    );
+
+    return {
+      items: patientsWithRelations,
+      total: Number(totalRows[0] && totalRows[0].total ? totalRows[0].total : 0)
     };
   },
 
