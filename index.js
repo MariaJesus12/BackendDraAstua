@@ -8,6 +8,8 @@ const patientRoutes = require('./routes/patientRoutes');
 const secretariaRoutes = require('./routes/secretariaRoutes');
 const authMiddleware = require('./middlewares/authMiddleware');
 const requireRoles = require('./middlewares/roleMiddleware');
+const doctorController = require('./controllers/doctorController');
+const patientController = require('./controllers/patientController');
 const userController = require('./controllers/userController');
 const secretariaController = require('./controllers/secretariaController');
 
@@ -97,6 +99,8 @@ app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
 
 // Alias routes (frontend calls without /secretaria prefix)
 const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', 'administrador'])];
+app.post('/api/doctors', authMiddleware, doctorController.createDoctor);
+app.post('/api/patients', authMiddleware, patientController.createPatient);
 app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
 app.get('/api/consultorios', ...secretariaAccess, secretariaController.getDoctorConsultorios);
 app.get('/api/doctor-visits', ...secretariaAccess, (req, res, next) => {

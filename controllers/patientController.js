@@ -6,8 +6,28 @@ function parseId(value) {
 }
 
 function handleDbError(res, error, entityName) {
+  if (error && error.code === 'VALIDATION_ERROR') {
+    return res.status(400).json({ error: error.message });
+  }
+
   if (error && error.code === 'ER_DUP_ENTRY') {
     return res.status(409).json({ error: 'Ya existe un registro con los mismos datos unicos' });
+  }
+
+  if (error && error.code === 'ER_BAD_NULL_ERROR') {
+    return res.status(400).json({ error: 'Faltan datos obligatorios para crear el paciente' });
+  }
+
+  if (error && error.code === 'ER_TRUNCATED_WRONG_VALUE') {
+    return res.status(400).json({ error: 'Uno de los valores del paciente tiene formato invalido' });
+  }
+
+  if (error && error.code === 'ER_DATA_TOO_LONG') {
+    return res.status(422).json({ error: 'Uno de los campos del paciente supera la longitud permitida' });
+  }
+
+  if (error && error.code === 'ER_NO_REFERENCED_ROW_2') {
+    return res.status(400).json({ error: 'Uno de los ids de relacion no existe en catalogos de paciente' });
   }
 
   if (error && error.code === 'ER_NO_SUCH_TABLE') {
@@ -25,24 +45,9 @@ function handleDbError(res, error, entityName) {
 exports.createPatient = async (req, res) => {
   try {
     const payload = req.body || {};
-    const nombre = payload.nombre != null ? String(payload.nombre).trim() : '';
-    const identificacion = payload.identificacion != null ? String(payload.identificacion).trim() : '';
-
-    if (!nombre) {
-      return res.status(400).json({ error: 'El nombre del paciente es obligatorio' });
-    }
-
-    if (!identificacion) {
-      return res.status(400).json({ error: 'La identificacion del paciente es obligatoria' });
-    }
-
-    const patient = await Patient.create({ ...payload, nombre, identificacion });
+    const patient = await Patient.create(payload);
     return res.status(201).json({ patient });
   } catch (error) {
-    if (error && error.message === 'No se recibieron campos validos para crear el paciente') {
-      return res.status(400).json({ error: error.message });
-    }
-
     return handleDbError(res, error, 'pacientes');
   }
 };
@@ -71,5 +76,32 @@ exports.getPatientById = async (req, res) => {
     return res.status(200).json({ patient });
   } catch (error) {
     return handleDbError(res, error, 'pacientes');
+  }
+};
+
+exports.getMedicamentos = async (req, res) => {
+  try {
+    const medicamentos = await Patient.findMedicamentos();
+    return res.status(200).json({ medicamentos, items: medicamentos, total: medicamentos.length });
+  } catch (error) {
+    return handleDbError(res, error, 'medicamentos');
+  }
+};
+
+exports.getAlergias = async (req, res) => {
+  try {
+    const alergias = await Patient.findAlergias();
+    return res.status(200).json({ alergias, items: alergias, total: alergias.length });
+  } catch (error) {
+    return handleDbError(res, error, 'alergias');
+  }
+};
+
+exports.getEnfermedades = async (req, res) => {
+  try {
+    const enfermedades = await Patient.findEnfermedades();
+    return res.status(200).json({ enfermedades, items: enfermedades, total: enfermedades.length });
+  } catch (error) {
+    return handleDbError(res, error, 'enfermedades');
   }
 };

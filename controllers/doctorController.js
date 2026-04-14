@@ -37,6 +37,7 @@ exports.createDoctor = async (req, res) => {
     const email = payload.email != null ? String(payload.email).trim() : '';
     const identificacion = payload.identificacion != null ? String(payload.identificacion).trim() : '';
     const password = payload.password != null ? String(payload.password) : '';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!nombre) {
       return res.status(400).json({ error: 'El nombre del doctor es obligatorio' });
@@ -44,6 +45,14 @@ exports.createDoctor = async (req, res) => {
 
     if (!email || !identificacion || !password) {
       return res.status(400).json({ error: 'email, identificacion y password son obligatorios' });
+    }
+
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'El email del doctor no tiene un formato valido' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La password del doctor debe tener al menos 6 caracteres' });
     }
 
     const doctor = await Doctor.create({ ...payload, nombre, email, identificacion, password });
