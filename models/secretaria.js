@@ -73,19 +73,10 @@ const Secretaria = {
               NULL AS motivo,
               v.consultorio_id,
               co.nombre AS consultorio_nombre,
-              COALESCE(es.nombre, esp.specialty) AS especialidad
+              NULL AS especialidad
        FROM visitas v
        INNER JOIN usuarios u ON u.id = v.doctor_id
        INNER JOIN consultorios co ON co.id = v.consultorio_id
-       LEFT JOIN doctor_especialidad de1 ON de1.doctor_id = v.doctor_id
-       LEFT JOIN especialidades es ON es.id = de1.especialidad_id
-       LEFT JOIN (
-         SELECT de.doctor_id,
-                GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS specialty
-         FROM doctor_especialidad de
-         INNER JOIN especialidades e ON e.id = de.especialidad_id
-         GROUP BY de.doctor_id
-       ) esp ON esp.doctor_id = v.doctor_id
        WHERE v.fecha = ?
        GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
        ORDER BY v.hora_inicio ASC, u.nombre ASC`,
@@ -174,19 +165,10 @@ const Secretaria = {
               NULL AS motivo,
               v.consultorio_id,
               co.nombre AS consultorio_nombre,
-              COALESCE(es.nombre, esp.specialty) AS especialidad
+              NULL AS especialidad
        FROM visitas v
        INNER JOIN usuarios u ON u.id = v.doctor_id
        INNER JOIN consultorios co ON co.id = v.consultorio_id
-       LEFT JOIN doctor_especialidad de1 ON de1.doctor_id = v.doctor_id
-       LEFT JOIN especialidades es ON es.id = de1.especialidad_id
-       LEFT JOIN (
-         SELECT de.doctor_id,
-                GROUP_CONCAT(DISTINCT e.nombre ORDER BY e.nombre ASC SEPARATOR ', ') AS specialty
-         FROM doctor_especialidad de
-         INNER JOIN especialidades e ON e.id = de.especialidad_id
-         GROUP BY de.doctor_id
-       ) esp ON esp.doctor_id = v.doctor_id
        WHERE v.id = ?
        GROUP BY v.id, v.doctor_id, u.nombre, v.fecha, v.hora_inicio, v.hora_fin, v.estado, v.consultorio_id, co.nombre
        LIMIT 1`,
