@@ -7,7 +7,9 @@ const doctorRoutes = require('./routes/doctorRoutes');
 const patientRoutes = require('./routes/patientRoutes');
 const secretariaRoutes = require('./routes/secretariaRoutes');
 const authMiddleware = require('./middlewares/authMiddleware');
+const requireRoles = require('./middlewares/roleMiddleware');
 const userController = require('./controllers/userController');
+const secretariaController = require('./controllers/secretariaController');
 
 dotenv.config();
 
@@ -92,6 +94,19 @@ app.use('/api/pacientes', patientRoutes);
 app.use('/api/secretaria', secretariaRoutes);
 app.get('/api/getRoleById/:id', authMiddleware, userController.getRoleById);
 app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
+
+// Alias routes (frontend calls without /secretaria prefix)
+const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', 'administrador'])];
+app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
+app.get('/api/consultorios', ...secretariaAccess, secretariaController.getDoctorConsultorios);
+app.get('/api/doctor-visits', ...secretariaAccess, (req, res, next) => {
+  const date = req.query.date;
+  if (date) {
+    req.params.date = date;
+    return secretariaController.getDoctorVisitsByDate(req, res, next);
+  }
+  return secretariaController.getDoctorVisits(req, res, next);
+});
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
