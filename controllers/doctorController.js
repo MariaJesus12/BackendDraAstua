@@ -39,29 +39,67 @@ function handleDbError(res, error, entityName) {
 exports.createDoctor = async (req, res) => {
   try {
     const payload = req.body || {};
-    const nombre = payload.nombre != null ? String(payload.nombre).trim() : '';
-    const email = payload.email != null ? String(payload.email).trim() : '';
-    const identificacion = payload.identificacion != null ? String(payload.identificacion).trim() : '';
-    const password = payload.password != null ? String(payload.password) : '';
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const nombreRaw = payload.nombre ?? payload.name ?? payload.doctor_name ?? payload.doctorName;
+    const emailRaw = payload.email ?? payload.correo ?? payload.mail;
+    const identificacionRaw = payload.identificacion ?? payload.identification ?? payload.cedula ?? payload.cedula_identidad;
+    const passwordRaw = payload.password ?? payload.contrasena ?? payload.contraseña ?? payload.clave;
+
+    const nombre = nombreRaw != null ? String(nombreRaw).trim() : '';
+    const email = emailRaw != null ? String(emailRaw).trim() : '';
+    const identificacion = identificacionRaw != null ? String(identificacionRaw).trim() : '';
+    const password = passwordRaw != null ? String(passwordRaw) : '';
 
     if (!nombre) {
       return res.status(400).json({ error: 'El nombre del doctor es obligatorio' });
     }
 
     if (!email || !identificacion || !password) {
-      return res.status(400).json({ error: 'email, identificacion y password son obligatorios' });
+      return res.status(400).json({
+        error: 'email, identificacion y password son obligatorios',
+        acceptedFields: {
+          nombre: ['nombre', 'name', 'doctor_name', 'doctorName'],
+          email: ['email', 'correo', 'mail'],
+          identificacion: ['identificacion', 'identification', 'cedula', 'cedula_identidad'],
+          password: ['password', 'contrasena', 'contraseña', 'clave']
+        }
+      });
     }
 
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'El email del doctor no tiene un formato valido' });
+    const especialidadInput =
+      payload.especialidad_ids ??
+      payload.especialidadIds ??
+      payload.especialidades ??
+      payload.especialidad_id ??
+      payload.especialidadId ??
+      payload.specialty_ids ??
+      payload.specialtyIds ??
+      payload.specialties;
+
+    if (especialidadInput === undefined || especialidadInput === null || especialidadInput === '') {
+      return res.status(400).json({
+        error: 'Debe enviar al menos una especialidad para el doctor',
+        acceptedFields: {
+          especialidades: [
+            'especialidad_ids',
+            'especialidadIds',
+            'especialidades',
+            'especialidad_id',
+            'especialidadId',
+            'specialty_ids',
+            'specialtyIds',
+            'specialties'
+          ]
+        }
+      });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'La password del doctor debe tener al menos 6 caracteres' });
-    }
-
-    const doctor = await Doctor.create({ ...payload, nombre, email, identificacion, password });
+    const doctor = await Doctor.create({
+      ...payload,
+      nombre,
+      email,
+      identificacion,
+      password
+    });
     return res.status(201).json({ doctor });
   } catch (error) {
     return handleDbError(res, error, 'doctores');

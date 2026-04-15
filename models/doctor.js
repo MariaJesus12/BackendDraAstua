@@ -3,6 +3,12 @@ const bcrypt = require('bcryptjs');
 
 const db = DbService.getInstance();
 
+function createValidationError(message) {
+  const error = new Error(message);
+  error.code = 'VALIDATION_ERROR';
+  return error;
+}
+
 function toBool(value, defaultValue = true) {
   if (value === undefined || value === null) {
     return defaultValue;
@@ -27,33 +33,81 @@ function toBool(value, defaultValue = true) {
   return defaultValue;
 }
 
+function toPositiveInt(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function parseEspecialidadIds(input) {
-  if (!Array.isArray(input)) {
+  if (input === undefined || input === null || input === '') {
     return [];
   }
 
-  const ids = input
-    .map((value) => Number(value))
-    .filter((value) => Number.isInteger(value) && value > 0);
+  const values = Array.isArray(input) ? input : [input];
+  const ids = values.map((value) => {
+    if (value && typeof value === 'object' && value.id !== undefined) {
+      return toPositiveInt(value.id);
+    }
+
+    return toPositiveInt(value);
+  });
+
+  if (ids.some((value) => value === null)) {
+    throw createValidationError('especialidad_ids debe contener ids enteros positivos');
+  }
 
   return [...new Set(ids)];
 }
 
-async function findDoctorRoleId() {
-  const rows = await db.query(
+function pickFirstDefined(payload, keys) {
+  for (const key of keys) {
+    if (payload && payload[key] !== undefined) {
+      return payload[key];
+    }
+  }
+
+  return undefined;
+}
+
+async function findDoctorRoleId(connection = null) {
+  const sql =
     `SELECT id
      FROM roles
      WHERE LOWER(nombre) = 'doctor'
-     LIMIT 1`
-  );
+     LIMIT 1`;
+
+  const rows = connection
+    ? (await connection.execute(sql))[0]
+    : await db.query(sql);
 
   if (!rows.length) {
-    const error = new Error('No existe un rol llamado doctor en la tabla roles');
+    const error = createValidationError('No existe un rol llamado doctor en la tabla roles');
     error.code = 'ROLE_DOCTOR_NOT_FOUND';
     throw error;
   }
 
   return rows[0].id;
+}
+
+async function ensureEspecialidadesExist(connection, especialidadIds) {
+  if (!especialidadIds.length) {
+    throw createValidationError('Debe enviar al menos una especialidad para el doctor');
+  }
+
+  const placeholders = especialidadIds.map(() => '?').join(', ');
+  const [rows] = await connection.execute(
+    `SELECT id
+     FROM especialidades
+     WHERE id IN (${placeholders})`,
+    especialidadIds
+  );
+
+  const existingIds = new Set(rows.map((row) => Number(row.id)));
+  const missingIds = especialidadIds.filter((id) => !existingIds.has(id));
+
+  if (missingIds.length) {
+    throw createValidationError(`Especialidades inválidas: ${missingIds.join(', ')}`);
+  }
 }
 
 async function findEspecialidadesByDoctorId(doctorId) {
@@ -112,34 +166,74 @@ const Doctor = {
     const identificacion = payload && payload.identificacion != null ? String(payload.identificacion).trim() : '';
     const password = payload && payload.password != null ? String(payload.password) : '';
     const activo = toBool(payload && payload.activo, true);
-    const especialidadIds = parseEspecialidadIds(payload && payload.especialidad_ids);
+    const especialidadIds = parseEspecialidadIds(
+      pickFirstDefined(payload, [
+        'especialidad_ids',
+        'especialidadIds',
+        'especialidades',
+        'especialidad_id',
+        'especialidadId',
+        'specialty_ids',
+        'specialtyIds',
+        'specialties'
+      ])
+    );
 
     if (!nombre || !email || !identificacion || !password) {
-      const error = new Error('nombre, email, identificacion y password son obligatorios');
-      error.code = 'VALIDATION_ERROR';
-      throw error;
+      throw createValidationError('nombre, email, identificacion y password son obligatorios');
     }
 
-    const roleId = await findDoctorRoleId();
-    const passwordHash = await bcrypt.hash(password, 10);
+    if (!especialidadIds.length) {
+      throw createValidationError('Debe enviar al menos una especialidad para el doctor');
+    }
 
+    const passwordHash = await bcrypt.hash(password, 10);
     const insertSql =
       `INSERT INTO usuarios (nombre, email, password, rol_id, activo, identificacion)
        VALUES (?, ?, ?, ?, ?, ?)`;
 
-    const result = await db.query(insertSql, [nombre, email, passwordHash, roleId, activo ? 1 : 0, identificacion]);
+    let connection;
+    let doctorId;
 
-    if (especialidadIds.length) {
+    try {
+      connection = await db.pool.getConnection();
+      await connection.beginTransaction();
+
+      const roleId = await findDoctorRoleId(connection);
+      await ensureEspecialidadesExist(connection, especialidadIds);
+
+      const [result] = await connection.execute(insertSql, [
+        nombre,
+        email,
+        passwordHash,
+        roleId,
+        activo ? 1 : 0,
+        identificacion
+      ]);
+
+      doctorId = result.insertId;
+
       const valuesSql = especialidadIds.map(() => '(?, ?)').join(', ');
-      const params = especialidadIds.flatMap((especialidadId) => [result.insertId, especialidadId]);
-      await db.query(
+      const params = especialidadIds.flatMap((especialidadId) => [doctorId, especialidadId]);
+      await connection.execute(
         `INSERT INTO doctor_especialidad (doctor_id, especialidad_id)
          VALUES ${valuesSql}`,
         params
       );
+
+      await connection.commit();
+    } catch (error) {
+      if (connection) {
+        await connection.rollback();
+      }
+      throw error;
+    } finally {
+      if (connection) {
+        connection.release();
+      }
     }
 
-    return this.findById(result.insertId);
+    return this.findById(doctorId);
   },
 
   async findAll() {
