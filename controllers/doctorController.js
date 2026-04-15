@@ -71,9 +71,11 @@ exports.createDoctor = async (req, res) => {
       payload.especialidades ??
       payload.especialidad_id ??
       payload.especialidadId ??
+      payload.especialidad ??
       payload.specialty_ids ??
       payload.specialtyIds ??
-      payload.specialties;
+      payload.specialties ??
+      payload.specialty;
 
     if (especialidadInput === undefined || especialidadInput === null || especialidadInput === '') {
       return res.status(400).json({
@@ -85,9 +87,11 @@ exports.createDoctor = async (req, res) => {
             'especialidades',
             'especialidad_id',
             'especialidadId',
+            'especialidad',
             'specialty_ids',
             'specialtyIds',
-            'specialties'
+            'specialties',
+            'specialty'
           ]
         }
       });

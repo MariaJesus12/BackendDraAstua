@@ -38,25 +38,42 @@ function toPositiveInt(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function parseEspecialidadIds(input) {
+function normalizeEspecialidadEntries(input) {
   if (input === undefined || input === null || input === '') {
     return [];
   }
 
-  const values = Array.isArray(input) ? input : [input];
-  const ids = values.map((value) => {
-    if (value && typeof value === 'object' && value.id !== undefined) {
-      return toPositiveInt(value.id);
+  return Array.isArray(input) ? input : [input];
+}
+
+function parseEspecialidadCandidate(entry) {
+  if (entry && typeof entry === 'object') {
+    const candidateId =
+      entry.id ??
+      entry.value ??
+      entry.especialidad_id ??
+      entry.especialidadId ??
+      entry.specialty_id ??
+      entry.specialtyId;
+
+    if (candidateId !== undefined) {
+      return { id: toPositiveInt(candidateId), name: null };
     }
 
-    return toPositiveInt(value);
-  });
-
-  if (ids.some((value) => value === null)) {
-    throw createValidationError('especialidad_ids debe contener ids enteros positivos');
+    const candidateName = entry.nombre ?? entry.name ?? entry.label ?? entry.especialidad ?? entry.specialty;
+    if (candidateName !== undefined) {
+      const normalizedName = String(candidateName).trim();
+      return { id: null, name: normalizedName || null };
+    }
   }
 
-  return [...new Set(ids)];
+  const numericId = toPositiveInt(entry);
+  if (numericId) {
+    return { id: numericId, name: null };
+  }
+
+  const normalizedName = entry != null ? String(entry).trim() : '';
+  return { id: null, name: normalizedName || null };
 }
 
 function pickFirstDefined(payload, keys) {
@@ -108,6 +125,44 @@ async function ensureEspecialidadesExist(connection, especialidadIds) {
   if (missingIds.length) {
     throw createValidationError(`Especialidades inválidas: ${missingIds.join(', ')}`);
   }
+}
+
+async function resolveEspecialidadIds(connection, input) {
+  const entries = normalizeEspecialidadEntries(input);
+  if (!entries.length) {
+    return [];
+  }
+
+  const parsedEntries = entries.map(parseEspecialidadCandidate);
+  const invalidEntries = parsedEntries.filter((entry) => entry.id === null && !entry.name);
+  if (invalidEntries.length) {
+    throw createValidationError('Debe enviar especialidades válidas para el doctor');
+  }
+
+  const ids = parsedEntries.filter((entry) => entry.id !== null).map((entry) => entry.id);
+  const names = parsedEntries.filter((entry) => entry.name).map((entry) => entry.name);
+
+  if (names.length) {
+    const placeholders = names.map(() => '?').join(', ');
+    const [rows] = await connection.execute(
+      `SELECT id, nombre
+       FROM especialidades
+       WHERE nombre IN (${placeholders})`,
+      names
+    );
+
+    const idsByName = new Map(rows.map((row) => [String(row.nombre).trim().toLowerCase(), Number(row.id)]));
+    const missingNames = names.filter((name) => !idsByName.has(String(name).trim().toLowerCase()));
+    if (missingNames.length) {
+      throw createValidationError(`Especialidades inválidas: ${missingNames.join(', ')}`);
+    }
+
+    for (const name of names) {
+      ids.push(idsByName.get(String(name).trim().toLowerCase()));
+    }
+  }
+
+  return [...new Set(ids)];
 }
 
 async function findEspecialidadesByDoctorId(doctorId) {
@@ -166,25 +221,21 @@ const Doctor = {
     const identificacion = payload && payload.identificacion != null ? String(payload.identificacion).trim() : '';
     const password = payload && payload.password != null ? String(payload.password) : '';
     const activo = toBool(payload && payload.activo, true);
-    const especialidadIds = parseEspecialidadIds(
-      pickFirstDefined(payload, [
-        'especialidad_ids',
-        'especialidadIds',
-        'especialidades',
-        'especialidad_id',
-        'especialidadId',
-        'specialty_ids',
-        'specialtyIds',
-        'specialties'
-      ])
-    );
+    const especialidadInput = pickFirstDefined(payload, [
+      'especialidad_ids',
+      'especialidadIds',
+      'especialidades',
+      'especialidad_id',
+      'especialidadId',
+      'especialidad',
+      'specialty_ids',
+      'specialtyIds',
+      'specialties',
+      'specialty'
+    ]);
 
     if (!nombre || !email || !identificacion || !password) {
       throw createValidationError('nombre, email, identificacion y password son obligatorios');
-    }
-
-    if (!especialidadIds.length) {
-      throw createValidationError('Debe enviar al menos una especialidad para el doctor');
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -200,6 +251,7 @@ const Doctor = {
       await connection.beginTransaction();
 
       const roleId = await findDoctorRoleId(connection);
+      const especialidadIds = await resolveEspecialidadIds(connection, especialidadInput);
       await ensureEspecialidadesExist(connection, especialidadIds);
 
       const [result] = await connection.execute(insertSql, [
