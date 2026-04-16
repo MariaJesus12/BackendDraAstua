@@ -140,6 +140,7 @@ exports.createAgenda = async (req, res) => {
       body.duracionBase,
       body.intervalo,
       body.intervaloMinutos,
+      body.slotMinutes,
       body.slotDuration,
       body.duracion
     ]);
@@ -200,7 +201,7 @@ exports.createAgenda = async (req, res) => {
       return res.status(400).json({
         error: 'intervalMinutes es obligatorio y debe ser un entero positivo',
         receivedKeys: Object.keys(body),
-        acceptedFields: ['intervalMinutes', 'intervalo_minutos', 'interval', 'duracionBase', 'intervalo', 'intervaloMinutos', 'slotDuration', 'duracion']
+        acceptedFields: ['intervalMinutes', 'intervalo_minutos', 'interval', 'duracionBase', 'intervalo', 'intervaloMinutos', 'slotMinutes', 'slotDuration', 'duracion']
       });
     }
 
