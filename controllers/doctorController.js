@@ -38,11 +38,37 @@ function handleDbError(res, error, entityName) {
 
 exports.createDoctor = async (req, res) => {
   try {
-    const payload = req.body || {};
-    const nombreRaw = payload.nombre ?? payload.name ?? payload.doctor_name ?? payload.doctorName;
-    const emailRaw = payload.email ?? payload.correo ?? payload.mail;
-    const identificacionRaw = payload.identificacion ?? payload.identification ?? payload.cedula ?? payload.cedula_identidad;
-    const passwordRaw = payload.password ?? payload.contrasena ?? payload.contraseña ?? payload.clave;
+    const body = req.body || {};
+    const nestedDoctor = body.doctor && typeof body.doctor === 'object' ? body.doctor : {};
+    const payload = { ...body, ...nestedDoctor };
+
+    const nombreRaw =
+      payload.nombre ??
+      payload.name ??
+      payload.doctor_name ??
+      payload.doctorName ??
+      payload.nombreCompleto ??
+      payload.fullName;
+    const emailRaw =
+      payload.email ??
+      payload.correo ??
+      payload.mail ??
+      payload.correoElectronico;
+    const identificacionRaw =
+      payload.identificacion ??
+      payload.identification ??
+      payload.cedula ??
+      payload.cedula_identidad ??
+      payload.identificacionDoctor ??
+      payload.idNumber;
+    const passwordRaw =
+      payload.password ??
+      payload.contrasena ??
+      payload.contraseña ??
+      payload.contrasenia ??
+      payload.clave ??
+      payload.pass ??
+      payload.claveAcceso;
 
     const nombre = nombreRaw != null ? String(nombreRaw).trim() : '';
     const email = emailRaw != null ? String(emailRaw).trim() : '';
@@ -56,11 +82,12 @@ exports.createDoctor = async (req, res) => {
     if (!email || !identificacion || !password) {
       return res.status(400).json({
         error: 'email, identificacion y password son obligatorios',
+        receivedKeys: Object.keys(payload),
         acceptedFields: {
-          nombre: ['nombre', 'name', 'doctor_name', 'doctorName'],
-          email: ['email', 'correo', 'mail'],
-          identificacion: ['identificacion', 'identification', 'cedula', 'cedula_identidad'],
-          password: ['password', 'contrasena', 'contraseña', 'clave']
+          nombre: ['nombre', 'name', 'doctor_name', 'doctorName', 'nombreCompleto', 'fullName'],
+          email: ['email', 'correo', 'mail', 'correoElectronico'],
+          identificacion: ['identificacion', 'identification', 'cedula', 'cedula_identidad', 'identificacionDoctor', 'idNumber'],
+          password: ['password', 'contrasena', 'contraseña', 'contrasenia', 'clave', 'pass', 'claveAcceso']
         }
       });
     }
@@ -72,6 +99,9 @@ exports.createDoctor = async (req, res) => {
       payload.especialidad_id ??
       payload.especialidadId ??
       payload.especialidad ??
+      payload.especialidadSeleccionada ??
+      payload.especialidadSeleccionadaId ??
+      payload.especialidadValue ??
       payload.specialty_ids ??
       payload.specialtyIds ??
       payload.specialties ??
@@ -80,6 +110,7 @@ exports.createDoctor = async (req, res) => {
     if (especialidadInput === undefined || especialidadInput === null || especialidadInput === '') {
       return res.status(400).json({
         error: 'Debe enviar al menos una especialidad para el doctor',
+        receivedKeys: Object.keys(payload),
         acceptedFields: {
           especialidades: [
             'especialidad_ids',
@@ -88,6 +119,9 @@ exports.createDoctor = async (req, res) => {
             'especialidad_id',
             'especialidadId',
             'especialidad',
+            'especialidadSeleccionada',
+            'especialidadSeleccionadaId',
+            'especialidadValue',
             'specialty_ids',
             'specialtyIds',
             'specialties',
