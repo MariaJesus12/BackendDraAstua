@@ -1,5 +1,11 @@
 const Agenda = require('../models/agenda');
 
+const TIPO_CONSULTA_OPTIONS = [
+  { value: 'primera_vez', label: 'Primera vez' },
+  { value: 'control', label: 'Control' },
+  { value: 'urgencia', label: 'Urgencia' }
+];
+
 function pickFirstDefined(values) {
   for (const value of values) {
     if (value !== undefined && value !== null && String(value).trim() !== '') {
@@ -59,6 +65,20 @@ function extractPositiveInt(value) {
     return parsePositiveInt(
       value.id ??
       value.value ??
+      value.pacienteId ??
+      value.paciente_id ??
+      value.patientId ??
+      value.patient_id ??
+      value.expedienteId ??
+      value.expediente_id ??
+      value.recordId ??
+      value.record_id ??
+      value.consultorioId ??
+      value.consultorio_id ??
+      value.roomId ??
+      value.room_id ??
+      value.duracion ??
+      value.duration ??
       value.doctorId ??
       value.doctor_id ??
       value.especialidadId ??
@@ -69,6 +89,27 @@ function extractPositiveInt(value) {
   }
 
   return parsePositiveInt(value);
+}
+
+function extractStringFromSelect(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'object') {
+    const candidate =
+      value.value ??
+      value.id ??
+      value.key ??
+      value.code ??
+      value.tipoConsulta ??
+      value.tipo_consulta ??
+      value.consultationType;
+
+    return String(candidate || '').trim();
+  }
+
+  return String(value).trim();
 }
 
 function isValidDate(value) {
@@ -283,16 +324,51 @@ exports.listCitas = async (req, res) => {
   }
 };
 
+exports.getTiposConsulta = async (req, res) => {
+  return res.status(200).json({
+    tiposConsulta: TIPO_CONSULTA_OPTIONS,
+    consultationTypes: TIPO_CONSULTA_OPTIONS,
+    items: TIPO_CONSULTA_OPTIONS,
+    total: TIPO_CONSULTA_OPTIONS.length
+  });
+};
+
 exports.assignPacienteToCita = async (req, res) => {
   try {
     const body = req.body || {};
     const citaId = parsePositiveInt(req.params.id);
-    const pacienteId = parsePositiveInt(pickFirstDefined([body.pacienteId, body.paciente_id]));
-    const expedienteId = parsePositiveInt(pickFirstDefined([body.expedienteId, body.expediente_id]));
-    const duracion = parsePositiveInt(pickFirstDefined([body.duracion, body.duration]));
+    const pacienteId = extractPositiveInt(pickFirstDefined([
+      body.pacienteId,
+      body.paciente_id,
+      body.patientId,
+      body.patient_id,
+      body.paciente,
+      body.patient,
+      body.selectedPatient,
+      body.patientValue
+    ]));
+    const expedienteId = extractPositiveInt(pickFirstDefined([
+      body.expedienteId,
+      body.expediente_id,
+      body.recordId,
+      body.record_id,
+      body.expediente,
+      body.record,
+      body.selectedRecord,
+      body.recordValue
+    ]));
+    const duracion = extractPositiveInt(pickFirstDefined([body.duracion, body.duration]));
     const motivo = pickFirstDefined([body.motivo, body.reason]);
     const notas = pickFirstDefined([body.notas, body.notes]);
-    const tipoConsulta = pickFirstDefined([body.tipoConsulta, body.tipo_consulta, body.consultationType]);
+    const tipoConsulta = extractStringFromSelect(
+      pickFirstDefined([
+        body.tipoConsulta,
+        body.tipo_consulta,
+        body.consultationType,
+        body.selectedConsultationType,
+        body.consultationTypeValue
+      ])
+    );
 
     if (!citaId) {
       return res.status(400).json({ error: 'El id de la cita es inválido' });
@@ -331,6 +407,18 @@ exports.updateCita = async (req, res) => {
       Object.prototype.hasOwnProperty.call(body, 'tipoConsulta') ||
       Object.prototype.hasOwnProperty.call(body, 'tipo_consulta') ||
       Object.prototype.hasOwnProperty.call(body, 'consultationType');
+    const hasEstado = Object.prototype.hasOwnProperty.call(body, 'estado') || Object.prototype.hasOwnProperty.call(body, 'status');
+    const hasDuracion = Object.prototype.hasOwnProperty.call(body, 'duracion') || Object.prototype.hasOwnProperty.call(body, 'duration');
+    const hasStartTime =
+      Object.prototype.hasOwnProperty.call(body, 'startTime') ||
+      Object.prototype.hasOwnProperty.call(body, 'hora_inicio') ||
+      Object.prototype.hasOwnProperty.call(body, 'start_time') ||
+      Object.prototype.hasOwnProperty.call(body, 'horaInicio');
+    const hasEndTime =
+      Object.prototype.hasOwnProperty.call(body, 'endTime') ||
+      Object.prototype.hasOwnProperty.call(body, 'hora_fin') ||
+      Object.prototype.hasOwnProperty.call(body, 'end_time') ||
+      Object.prototype.hasOwnProperty.call(body, 'horaFin');
 
     const pacienteId = hasPacienteId ? parsePositiveInt(pickFirstDefined([body.pacienteId, body.paciente_id])) : undefined;
     const expedienteId = hasExpedienteId ? parsePositiveInt(pickFirstDefined([body.expedienteId, body.expediente_id])) : undefined;
@@ -339,7 +427,17 @@ exports.updateCita = async (req, res) => {
       : undefined;
     const motivo = hasMotivo ? (body.motivo ?? body.reason) : undefined;
     const notas = hasNotas ? (body.notas ?? body.notes) : undefined;
-    const tipoConsulta = hasTipoConsulta ? (body.tipoConsulta ?? body.tipo_consulta ?? body.consultationType) : undefined;
+    const tipoConsulta = hasTipoConsulta
+      ? extractStringFromSelect(body.tipoConsulta ?? body.tipo_consulta ?? body.consultationType)
+      : undefined;
+    const estado = hasEstado ? (body.estado ?? body.status) : undefined;
+    const duracion = hasDuracion ? parsePositiveInt(pickFirstDefined([body.duracion, body.duration])) : undefined;
+    const startTime = hasStartTime
+      ? normalizeTimeInput(pickFirstDefined([body.startTime, body.hora_inicio, body.start_time, body.horaInicio]))
+      : undefined;
+    const endTime = hasEndTime
+      ? normalizeTimeInput(pickFirstDefined([body.endTime, body.hora_fin, body.end_time, body.horaFin]))
+      : undefined;
 
     if (!citaId) {
       return res.status(400).json({ error: 'El id de la cita es inválido' });
@@ -352,7 +450,11 @@ exports.updateCita = async (req, res) => {
       consultorioId,
       motivo,
       notas,
-      tipoConsulta
+      tipoConsulta,
+      estado,
+      duracion,
+      startTime,
+      endTime
     });
 
     return res.status(200).json({ cita });

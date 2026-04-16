@@ -10,6 +10,7 @@ router.post('/agendas', ...secretariaAccess, agendaController.createAgenda);
 router.get('/agendas', ...secretariaAccess, agendaController.listAgendas);
 router.get('/agendas/:id', ...secretariaAccess, agendaController.getAgendaById);
 router.get('/citas', ...secretariaAccess, agendaController.listCitas);
+router.get('/citas/tipos-consulta', ...secretariaAccess, agendaController.getTiposConsulta);
 router.patch('/citas/:id/asignar', ...secretariaAccess, agendaController.assignPacienteToCita);
 router.patch('/citas/:id', ...secretariaAccess, agendaController.updateCita);
 router.patch('/citas/:id/desasignar', ...secretariaAccess, agendaController.unassignPacienteFromCita);

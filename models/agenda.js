@@ -3,6 +3,8 @@ const DbService = require('../config/database');
 const db = DbService.getInstance();
 const PLACEHOLDER_IDENTIFICACION = 'SLOT-DISPONIBLE-SISTEMA';
 const PLACEHOLDER_NOMBRE = 'Slot Disponible (Sistema)';
+const ALLOWED_TIPO_CONSULTA = ['primera_vez', 'control', 'urgencia'];
+const ALLOWED_ESTADOS = ['pendiente', 'atendida', 'cancelada'];
 
 function createValidationError(message, code = 'VALIDATION_ERROR') {
   const error = new Error(message);
@@ -34,6 +36,378 @@ function addMinutes(time, minutesToAdd) {
   const hours = String(Math.floor(result / 60)).padStart(2, '0');
   const minutes = String(result % 60).padStart(2, '0');
   return `${hours}:${minutes}`;
+}
+
+function getDurationBetween(startTime, endTime) {
+  const startMinutes = timeToMinutes(startTime);
+  const endMinutes = timeToMinutes(endTime);
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    return null;
+  }
+
+  return endMinutes - startMinutes;
+}
+
+function isAlignedToInterval(agendaStartTime, targetTime, intervalMinutes) {
+  const agendaStartMinutes = timeToMinutes(agendaStartTime);
+  const targetMinutes = timeToMinutes(targetTime);
+  if (agendaStartMinutes === null || targetMinutes === null) {
+    return false;
+  }
+
+  return (targetMinutes - agendaStartMinutes) % intervalMinutes === 0;
+}
+
+function normalizeNullableText(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized ? normalized : null;
+}
+
+function getRowDuration(row, intervalMinutes) {
+  return toPositiveInt(row.duracion) || getDurationBetween(row.hora_inicio, row.hora_fin) || intervalMinutes;
+}
+
+function isPersistentScheduledItem(row, intervalMinutes, targetId) {
+  if (Number(row.id) === Number(targetId)) {
+    return true;
+  }
+
+  const duration = getRowDuration(row, intervalMinutes);
+  return Boolean(
+    row.paciente_id ||
+    row.consultorio_id ||
+    row.motivo ||
+    row.notas ||
+    row.tipo_consulta ||
+    row.estado === 'atendida' ||
+    row.estado === 'cancelada' ||
+    duration !== intervalMinutes
+  );
+}
+
+async function fetchCitaById(citaId) {
+  const rows = await db.query(
+    `SELECT c.id,
+            c.agenda_id,
+            c.expediente_id,
+            c.paciente_id,
+            c.doctor_id,
+            u.nombre AS doctor_nombre,
+            c.especialidad_id,
+            e.nombre AS especialidad_nombre,
+            DATE_FORMAT(c.fecha, '%Y-%m-%d') AS fecha,
+            TIME_FORMAT(c.hora, '%H:%i') AS hora,
+            TIME_FORMAT(c.hora_inicio, '%H:%i') AS hora_inicio,
+            TIME_FORMAT(c.hora_fin, '%H:%i') AS hora_fin,
+            c.estado,
+            c.motivo,
+            c.notas,
+            c.tipo_consulta,
+            c.duracion,
+            c.created_at,
+            c.updated_at,
+            p.nombre AS paciente_nombre
+     FROM citas c
+     INNER JOIN usuarios u ON u.id = c.doctor_id
+     LEFT JOIN especialidades e ON e.id = c.especialidad_id
+     LEFT JOIN pacientes p ON p.id = c.paciente_id
+     WHERE c.id = ?
+     LIMIT 1`,
+    [citaId]
+  );
+
+  return rows.length ? mapCitaRow(rows[0]) : null;
+}
+
+async function rebuildAgendaTimeline(connection, options) {
+  const {
+    agenda,
+    citaId,
+    citaRows,
+    targetValues,
+    placeholderExpedienteId
+  } = options;
+
+  const intervalMinutes = Number(agenda.intervalo_minutos);
+  const agendaStartTime = agenda.hora_inicio;
+  const agendaEndTime = agenda.hora_fin;
+  const agendaStartMinutes = timeToMinutes(agendaStartTime);
+  const agendaEndMinutes = timeToMinutes(agendaEndTime);
+  const persistentItems = citaRows
+    .filter((row) => isPersistentScheduledItem(row, intervalMinutes, citaId))
+    .sort((left, right) => {
+      const leftMinutes = timeToMinutes(left.hora_inicio) ?? 0;
+      const rightMinutes = timeToMinutes(right.hora_inicio) ?? 0;
+      return leftMinutes - rightMinutes || Number(left.id) - Number(right.id);
+    })
+    .map((row) => ({
+      ...row,
+      duration: getRowDuration(row, intervalMinutes)
+    }));
+
+  const targetIndex = persistentItems.findIndex((row) => Number(row.id) === Number(citaId));
+  if (targetIndex === -1) {
+    throw createValidationError('Cita no encontrada para recalcular la agenda');
+  }
+
+  const targetItem = persistentItems[targetIndex];
+  const previousItem = targetIndex > 0 ? persistentItems[targetIndex - 1] : null;
+  const previousEndTime = previousItem ? previousItem.hora_fin : agendaStartTime;
+
+  const requestedStartTime = targetValues.startTime !== undefined ? targetValues.startTime : undefined;
+  const requestedEndTime = targetValues.endTime !== undefined ? targetValues.endTime : undefined;
+  const requestedDuration = targetValues.duration !== undefined ? targetValues.duration : undefined;
+
+  let nextStartTime = targetItem.hora_inicio;
+  let nextEndTime = targetItem.hora_fin;
+  let nextDuration = targetItem.duration;
+
+  if (requestedStartTime !== undefined && requestedEndTime !== undefined) {
+    const derivedDuration = getDurationBetween(requestedStartTime, requestedEndTime);
+    if (!derivedDuration) {
+      throw createValidationError('La hora_fin debe ser mayor que la hora_inicio');
+    }
+    if (requestedDuration && requestedDuration !== derivedDuration) {
+      throw createValidationError('La duración enviada no coincide con la hora de inicio y fin');
+    }
+    nextStartTime = requestedStartTime;
+    nextEndTime = requestedEndTime;
+    nextDuration = derivedDuration;
+  } else if (requestedStartTime !== undefined && requestedDuration !== undefined) {
+    nextStartTime = requestedStartTime;
+    nextDuration = requestedDuration;
+    nextEndTime = addMinutes(nextStartTime, nextDuration);
+  } else if (requestedEndTime !== undefined && requestedDuration !== undefined) {
+    nextEndTime = requestedEndTime;
+    nextDuration = requestedDuration;
+    nextStartTime = addMinutes(nextEndTime, -nextDuration);
+  } else if (requestedStartTime !== undefined) {
+    nextStartTime = requestedStartTime;
+    nextEndTime = addMinutes(nextStartTime, nextDuration);
+  } else if (requestedEndTime !== undefined) {
+    const derivedDuration = getDurationBetween(targetItem.hora_inicio, requestedEndTime);
+    if (!derivedDuration) {
+      throw createValidationError('La hora_fin debe ser mayor que la hora_inicio');
+    }
+    nextEndTime = requestedEndTime;
+    nextDuration = derivedDuration;
+  } else if (requestedDuration !== undefined) {
+    nextDuration = requestedDuration;
+    nextEndTime = addMinutes(nextStartTime, nextDuration);
+  }
+
+  if (!nextStartTime || !nextEndTime) {
+    throw createValidationError('No fue posible calcular el nuevo horario de la cita');
+  }
+
+  if (!isAlignedToInterval(agendaStartTime, nextStartTime, intervalMinutes) || !isAlignedToInterval(agendaStartTime, nextEndTime, intervalMinutes)) {
+    throw createValidationError('Las horas de la cita deben respetar el intervalo configurado en la agenda');
+  }
+
+  if (nextDuration <= 0 || nextDuration % intervalMinutes !== 0) {
+    throw createValidationError('La duración de la cita debe ser múltiplo del intervalo de la agenda');
+  }
+
+  if (timeToMinutes(nextStartTime) < agendaStartMinutes || timeToMinutes(nextEndTime) > agendaEndMinutes) {
+    throw createValidationError('La cita debe permanecer dentro del horario de la agenda');
+  }
+
+  if (timeToMinutes(nextStartTime) < timeToMinutes(previousEndTime)) {
+    throw createValidationError('La nueva hora de inicio se traslapa con la cita anterior');
+  }
+
+  const rebuiltItems = [];
+  for (let index = 0; index < targetIndex; index += 1) {
+    rebuiltItems.push({ ...persistentItems[index] });
+  }
+
+  rebuiltItems.push({
+    ...targetItem,
+    expediente_id: targetValues.expedienteId,
+    paciente_id: targetValues.pacienteId,
+    consultorio_id: targetValues.consultorioId,
+    motivo: targetValues.motivo,
+    notas: targetValues.notas,
+    tipo_consulta: targetValues.tipoConsulta,
+    estado: targetValues.estado,
+    hora: nextStartTime,
+    hora_inicio: nextStartTime,
+    hora_fin: nextEndTime,
+    duration: nextDuration,
+    duracion: nextDuration
+  });
+
+  let cursorTime = nextEndTime;
+  for (let index = targetIndex + 1; index < persistentItems.length; index += 1) {
+    const currentItem = persistentItems[index];
+    const currentDuration = currentItem.duration;
+    const shiftedEndTime = addMinutes(cursorTime, currentDuration);
+    if (timeToMinutes(shiftedEndTime) > agendaEndMinutes) {
+      throw createValidationError('La agenda no tiene suficiente espacio para reacomodar las citas con la nueva duración');
+    }
+
+    rebuiltItems.push({
+      ...currentItem,
+      hora: cursorTime,
+      hora_inicio: cursorTime,
+      hora_fin: shiftedEndTime,
+      duration: currentDuration,
+      duracion: currentDuration
+    });
+
+    cursorTime = shiftedEndTime;
+  }
+
+  const finalItems = rebuiltItems.sort((left, right) => {
+    const leftMinutes = timeToMinutes(left.hora_inicio) ?? 0;
+    const rightMinutes = timeToMinutes(right.hora_inicio) ?? 0;
+    return leftMinutes - rightMinutes || Number(left.id) - Number(right.id);
+  });
+
+  let scanTime = agendaStartTime;
+  const slotValues = [];
+  for (const item of finalItems) {
+    const itemStartMinutes = timeToMinutes(item.hora_inicio);
+    const scanMinutes = timeToMinutes(scanTime);
+    if (itemStartMinutes < scanMinutes) {
+      throw createValidationError('El nuevo horario produce un traslape entre citas');
+    }
+
+    const gapDuration = itemStartMinutes - scanMinutes;
+    if (gapDuration % intervalMinutes !== 0) {
+      throw createValidationError('El reajuste dejó un espacio inválido en la agenda');
+    }
+
+    while (timeToMinutes(scanTime) < itemStartMinutes) {
+      const slotEndTime = addMinutes(scanTime, intervalMinutes);
+      slotValues.push([
+        placeholderExpedienteId,
+        agenda.doctor_id,
+        item.especialidad_id || agenda.especialidad_id,
+        agenda.fecha,
+        scanTime,
+        'pendiente',
+        null,
+        agenda.id,
+        null,
+        scanTime,
+        slotEndTime,
+        null,
+        intervalMinutes,
+        null,
+        null
+      ]);
+      scanTime = slotEndTime;
+    }
+
+    scanTime = item.hora_fin;
+  }
+
+  const remainingDuration = timeToMinutes(agendaEndTime) - timeToMinutes(scanTime);
+  if (remainingDuration % intervalMinutes !== 0) {
+    throw createValidationError('El reajuste dejó un espacio inválido al final de la agenda');
+  }
+
+  while (timeToMinutes(scanTime) < agendaEndMinutes) {
+    const slotEndTime = addMinutes(scanTime, intervalMinutes);
+    slotValues.push([
+      placeholderExpedienteId,
+      agenda.doctor_id,
+      finalItems[0]?.especialidad_id || agenda.especialidad_id,
+      agenda.fecha,
+      scanTime,
+      'pendiente',
+      null,
+      agenda.id,
+      null,
+      scanTime,
+      slotEndTime,
+      null,
+      intervalMinutes,
+      null,
+      null
+    ]);
+    scanTime = slotEndTime;
+  }
+
+  for (const item of finalItems) {
+    const persistedExpedienteId = item.paciente_id ? item.expediente_id : placeholderExpedienteId;
+    const persistedEstado = item.estado || 'pendiente';
+
+    await connection.execute(
+      `UPDATE citas
+       SET expediente_id = ?,
+           paciente_id = ?,
+           consultorio_id = ?,
+           motivo = ?,
+           notas = ?,
+           tipo_consulta = ?,
+           estado = ?,
+           hora = ?,
+           hora_inicio = ?,
+           hora_fin = ?,
+           duracion = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        persistedExpedienteId,
+        item.paciente_id || null,
+        item.consultorio_id || null,
+        item.motivo || null,
+        item.notas || null,
+        item.tipo_consulta || null,
+        persistedEstado,
+        item.hora_inicio,
+        item.hora_inicio,
+        item.hora_fin,
+        item.duracion,
+        item.id
+      ]
+    );
+  }
+
+  const keepIds = finalItems.map((item) => Number(item.id));
+  const keepPlaceholders = keepIds.map(() => '?').join(', ');
+  await connection.execute(
+    `DELETE FROM citas
+     WHERE agenda_id = ?
+       AND id NOT IN (${keepPlaceholders})`,
+    [agenda.id, ...keepIds]
+  );
+
+  if (slotValues.length) {
+    const valuesClause = slotValues.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)').join(', ');
+    await connection.execute(
+      `INSERT INTO citas (
+        expediente_id,
+        doctor_id,
+        especialidad_id,
+        fecha,
+        hora,
+        estado,
+        motivo,
+        agenda_id,
+        paciente_id,
+        hora_inicio,
+        hora_fin,
+        consultorio_id,
+        duracion,
+        notas,
+        tipo_consulta,
+        created_at,
+        updated_at
+      ) VALUES ${valuesClause}`,
+      slotValues.flat()
+    );
+  }
 }
 
 function mapCitaRow(row) {
@@ -243,6 +617,19 @@ async function findExpedienteRow(connection, expedienteId) {
 }
 
 async function getOrCreatePlaceholderExpedienteId(connection) {
+  const [existingPlaceholderRows] = await connection.execute(
+    `SELECT expediente_id
+     FROM citas
+     WHERE paciente_id IS NULL
+       AND expediente_id IS NOT NULL
+     ORDER BY id ASC
+     LIMIT 1`
+  );
+
+  if (existingPlaceholderRows.length) {
+    return Number(existingPlaceholderRows[0].expediente_id);
+  }
+
   const [pacienteRows] = await connection.execute(
     `SELECT id
      FROM pacientes
@@ -579,7 +966,7 @@ const Agenda = {
       throw createValidationError('Debe enviar pacienteId o expedienteId para asignar la cita');
     }
 
-    if (tipoConsulta && !['primera_vez', 'control', 'urgencia'].includes(tipoConsulta)) {
+    if (tipoConsulta && !ALLOWED_TIPO_CONSULTA.includes(tipoConsulta)) {
       throw createValidationError('tipoConsulta invalido. Valores permitidos: primera_vez, control, urgencia');
     }
 
@@ -782,17 +1169,37 @@ const Agenda = {
     const pacienteId = payload.pacienteId !== undefined ? toPositiveInt(payload.pacienteId) : undefined;
     const expedienteId = payload.expedienteId !== undefined ? toPositiveInt(payload.expedienteId) : undefined;
     const consultorioId = payload.consultorioId !== undefined ? toPositiveInt(payload.consultorioId) : undefined;
-    const motivo = payload.motivo !== undefined ? (payload.motivo != null ? String(payload.motivo).trim() : null) : undefined;
-    const notas = payload.notas !== undefined ? (payload.notas != null ? String(payload.notas).trim() : null) : undefined;
-    const tipoConsulta = payload.tipoConsulta !== undefined ? (payload.tipoConsulta ? String(payload.tipoConsulta).trim() : null) : undefined;
+    const motivo = normalizeNullableText(payload.motivo);
+    const notas = normalizeNullableText(payload.notas);
+    const tipoConsulta = payload.tipoConsulta !== undefined ? normalizeNullableText(payload.tipoConsulta) : undefined;
+    const estado = payload.estado !== undefined ? normalizeNullableText(payload.estado)?.toLowerCase() || null : undefined;
+    const requestedDuration = payload.duracion !== undefined ? toPositiveInt(payload.duracion) : undefined;
+    const requestedStartTime = payload.startTime !== undefined ? String(payload.startTime).trim() : undefined;
+    const requestedEndTime = payload.endTime !== undefined ? String(payload.endTime).trim() : undefined;
     const clearPaciente = Boolean(payload.clearPaciente);
 
     if (!citaId) {
       throw createValidationError('citaId es obligatorio');
     }
 
-    if (tipoConsulta && !['primera_vez', 'control', 'urgencia'].includes(tipoConsulta)) {
+    if (tipoConsulta && !ALLOWED_TIPO_CONSULTA.includes(tipoConsulta)) {
       throw createValidationError('tipoConsulta invalido. Valores permitidos: primera_vez, control, urgencia');
+    }
+
+    if (estado && !ALLOWED_ESTADOS.includes(estado)) {
+      throw createValidationError('estado invalido. Valores permitidos: pendiente, atendida, cancelada');
+    }
+
+    if (requestedStartTime !== undefined && timeToMinutes(requestedStartTime) === null) {
+      throw createValidationError('La hora de inicio debe tener formato HH:MM');
+    }
+
+    if (requestedEndTime !== undefined && timeToMinutes(requestedEndTime) === null) {
+      throw createValidationError('La hora de fin debe tener formato HH:MM');
+    }
+
+    if (payload.duracion !== undefined && !requestedDuration) {
+      throw createValidationError('La duración debe ser un entero positivo');
     }
 
     let connection;
@@ -802,9 +1209,29 @@ const Agenda = {
       await connection.beginTransaction();
 
       const [citaRows] = await connection.execute(
-        `SELECT id, agenda_id, expediente_id, paciente_id, estado, consultorio_id, motivo, notas, tipo_consulta
-         FROM citas
-         WHERE id = ?
+        `SELECT c.id,
+                c.agenda_id,
+                c.expediente_id,
+                c.paciente_id,
+                c.doctor_id,
+                c.especialidad_id,
+                c.consultorio_id,
+                c.estado,
+                c.motivo,
+                c.notas,
+                c.tipo_consulta,
+                c.duracion,
+                TIME_FORMAT(c.hora, '%H:%i') AS hora,
+                TIME_FORMAT(c.hora_inicio, '%H:%i') AS hora_inicio,
+                TIME_FORMAT(c.hora_fin, '%H:%i') AS hora_fin,
+                a.doctor_id,
+                DATE_FORMAT(a.fecha, '%Y-%m-%d') AS agenda_fecha,
+                TIME_FORMAT(a.hora_inicio, '%H:%i') AS agenda_hora_inicio,
+                TIME_FORMAT(a.hora_fin, '%H:%i') AS agenda_hora_fin,
+                a.intervalo_minutos
+         FROM citas c
+         INNER JOIN agendas a ON a.id = c.agenda_id
+         WHERE c.id = ?
          LIMIT 1
          FOR UPDATE`,
         [citaId]
@@ -815,9 +1242,29 @@ const Agenda = {
       }
 
       const cita = citaRows[0];
-      if (cita.estado === 'cancelada') {
-        throw createValidationError('No se puede editar una cita cancelada');
+
+      const [agendaRows] = await connection.execute(
+        `SELECT a.id,
+                a.doctor_id,
+                DATE_FORMAT(a.fecha, '%Y-%m-%d') AS fecha,
+                TIME_FORMAT(a.hora_inicio, '%H:%i') AS hora_inicio,
+                TIME_FORMAT(a.hora_fin, '%H:%i') AS hora_fin,
+                a.intervalo_minutos,
+                MIN(c.especialidad_id) AS especialidad_id
+         FROM agendas a
+         LEFT JOIN citas c ON c.agenda_id = a.id
+         WHERE a.id = ?
+         GROUP BY a.id, a.doctor_id, a.fecha, a.hora_inicio, a.hora_fin, a.intervalo_minutos
+         LIMIT 1
+         FOR UPDATE`,
+        [cita.agenda_id]
+      );
+
+      if (!agendaRows.length) {
+        throw createValidationError('La agenda asociada a la cita no existe');
       }
+
+      const agenda = agendaRows[0];
 
       let resolvedPacienteId = cita.paciente_id;
       let resolvedExpedienteId = cita.expediente_id;
@@ -869,6 +1316,11 @@ const Agenda = {
         resolvedExpedienteId = placeholderExpedienteId;
       }
 
+      const nextEstado = estado !== undefined ? estado : (resolvedPacienteId ? cita.estado || 'pendiente' : 'pendiente');
+      if (!resolvedPacienteId && nextEstado === 'atendida') {
+        throw createValidationError('No se puede marcar como atendida una cita sin paciente asignado');
+      }
+
       let resolvedConsultorioId = cita.consultorio_id;
       if (consultorioId !== undefined) {
         if (!consultorioId) {
@@ -882,30 +1334,47 @@ const Agenda = {
         }
       }
 
-      const nextEstado = 'pendiente';
-
-      await connection.execute(
-        `UPDATE citas
-         SET expediente_id = ?,
-             paciente_id = ?,
-             consultorio_id = ?,
-             motivo = ?,
-             notas = ?,
-             tipo_consulta = ?,
-             estado = ?,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [
-          resolvedExpedienteId,
-          resolvedPacienteId,
-          resolvedConsultorioId,
-          motivo !== undefined ? motivo : cita.motivo,
-          notas !== undefined ? notas : cita.notas,
-          tipoConsulta !== undefined ? tipoConsulta : cita.tipo_consulta,
-          nextEstado,
-          citaId
-        ]
+      const [agendaCitaRows] = await connection.execute(
+        `SELECT id,
+                agenda_id,
+                expediente_id,
+                paciente_id,
+                doctor_id,
+                especialidad_id,
+                consultorio_id,
+                estado,
+                motivo,
+                notas,
+                tipo_consulta,
+                duracion,
+                TIME_FORMAT(hora, '%H:%i') AS hora,
+                TIME_FORMAT(hora_inicio, '%H:%i') AS hora_inicio,
+                TIME_FORMAT(hora_fin, '%H:%i') AS hora_fin
+         FROM citas
+         WHERE agenda_id = ?
+         ORDER BY hora_inicio ASC, id ASC
+         FOR UPDATE`,
+        [cita.agenda_id]
       );
+
+      await rebuildAgendaTimeline(connection, {
+        agenda,
+        citaId,
+        citaRows: agendaCitaRows,
+        placeholderExpedienteId,
+        targetValues: {
+          pacienteId: resolvedPacienteId,
+          expedienteId: resolvedExpedienteId,
+          consultorioId: resolvedConsultorioId,
+          motivo: motivo !== undefined ? motivo : cita.motivo,
+          notas: notas !== undefined ? notas : cita.notas,
+          tipoConsulta: tipoConsulta !== undefined ? tipoConsulta : cita.tipo_consulta,
+          estado: nextEstado,
+          duration: requestedDuration !== undefined ? requestedDuration : undefined,
+          startTime: requestedStartTime !== undefined ? requestedStartTime : undefined,
+          endTime: requestedEndTime !== undefined ? requestedEndTime : undefined
+        }
+      });
 
       await connection.commit();
     } catch (error) {
@@ -919,37 +1388,7 @@ const Agenda = {
       }
     }
 
-    const rows = await db.query(
-      `SELECT c.id,
-              c.agenda_id,
-              c.expediente_id,
-              c.paciente_id,
-              c.doctor_id,
-              u.nombre AS doctor_nombre,
-              c.especialidad_id,
-              e.nombre AS especialidad_nombre,
-              DATE_FORMAT(c.fecha, '%Y-%m-%d') AS fecha,
-              TIME_FORMAT(c.hora, '%H:%i') AS hora,
-              TIME_FORMAT(c.hora_inicio, '%H:%i') AS hora_inicio,
-              TIME_FORMAT(c.hora_fin, '%H:%i') AS hora_fin,
-              c.estado,
-              c.motivo,
-              c.notas,
-              c.tipo_consulta,
-              c.duracion,
-              c.created_at,
-              c.updated_at,
-              p.nombre AS paciente_nombre
-       FROM citas c
-       INNER JOIN usuarios u ON u.id = c.doctor_id
-       LEFT JOIN especialidades e ON e.id = c.especialidad_id
-       LEFT JOIN pacientes p ON p.id = c.paciente_id
-       WHERE c.id = ?
-       LIMIT 1`,
-      [citaId]
-    );
-
-    return rows.length ? mapCitaRow(rows[0]) : null;
+    return fetchCitaById(citaId);
   },
 
   async unassignPacienteFromCita(payload) {
