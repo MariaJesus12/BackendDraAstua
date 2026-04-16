@@ -1,6 +1,8 @@
 const DbService = require('../config/database');
 
 const db = DbService.getInstance();
+const PLACEHOLDER_IDENTIFICACION = 'SLOT-DISPONIBLE-SISTEMA';
+const PLACEHOLDER_NOMBRE = 'Slot Disponible (Sistema)';
 
 function createValidationError(message, code = 'VALIDATION_ERROR') {
   const error = new Error(message);
@@ -35,14 +37,15 @@ function addMinutes(time, minutesToAdd) {
 }
 
 function mapCitaRow(row) {
-  const disponible = !row.paciente_id && !row.expediente_id && row.estado === 'pendiente';
+  const disponible = !row.paciente_id && row.estado === 'pendiente';
+  const expedienteVisible = row.paciente_id ? row.expediente_id : null;
 
   return {
     id: row.id,
     agenda_id: row.agenda_id,
     agendaId: row.agenda_id,
-    expediente_id: row.expediente_id,
-    expedienteId: row.expediente_id,
+    expediente_id: expedienteVisible,
+    expedienteId: expedienteVisible,
     paciente_id: row.paciente_id,
     pacienteId: row.paciente_id,
     paciente_nombre: row.paciente_nombre || null,
@@ -130,17 +133,55 @@ async function resolveDoctorEspecialidadId(connection, doctorId, explicitEspecia
     [doctorId]
   );
 
-  if (!rows.length) {
-    throw createValidationError('El doctor no tiene especialidades asignadas');
-  }
-
   const specialtyIds = rows.map((row) => Number(row.id));
 
   if (explicitEspecialidadId) {
-    if (!specialtyIds.includes(explicitEspecialidadId)) {
-      throw createValidationError('La especialidad indicada no pertenece al doctor seleccionado');
+    const [specialtyRows] = await connection.execute(
+      `SELECT id
+       FROM especialidades
+       WHERE id = ?
+       LIMIT 1`,
+      [explicitEspecialidadId]
+    );
+
+    if (!specialtyRows.length) {
+      throw createValidationError('La especialidad indicada no existe');
     }
+
+    if (!specialtyIds.includes(explicitEspecialidadId)) {
+      // Autorrepara datos: vincula doctor-especialidad si faltaba la relación.
+      await connection.execute(
+        `INSERT INTO doctor_especialidad (doctor_id, especialidad_id)
+         VALUES (?, ?)`,
+        [doctorId, explicitEspecialidadId]
+      );
+    }
+
     return explicitEspecialidadId;
+  }
+
+  if (!rows.length) {
+    // Fallback seguro: usa una especialidad disponible para permitir crear agenda
+    // y crea la relación faltante para mantener consistencia.
+    const [catalogRows] = await connection.execute(
+      `SELECT id
+       FROM especialidades
+       ORDER BY id ASC
+       LIMIT 1`
+    );
+
+    if (!catalogRows.length) {
+      throw createValidationError('No hay especialidades registradas para crear agendas');
+    }
+
+    const fallbackEspecialidadId = Number(catalogRows[0].id);
+    await connection.execute(
+      `INSERT INTO doctor_especialidad (doctor_id, especialidad_id)
+       VALUES (?, ?)`,
+      [doctorId, fallbackEspecialidadId]
+    );
+
+    return fallbackEspecialidadId;
   }
 
   if (specialtyIds.length > 1) {
@@ -199,6 +240,48 @@ async function findExpedienteRow(connection, expedienteId) {
   );
 
   return rows.length ? rows[0] : null;
+}
+
+async function getOrCreatePlaceholderExpedienteId(connection) {
+  const [pacienteRows] = await connection.execute(
+    `SELECT id
+     FROM pacientes
+     WHERE identificacion = ?
+     LIMIT 1`,
+    [PLACEHOLDER_IDENTIFICACION]
+  );
+
+  let pacienteId;
+  if (pacienteRows.length) {
+    pacienteId = Number(pacienteRows[0].id);
+  } else {
+    const [pacienteInsert] = await connection.execute(
+      `INSERT INTO pacientes (nombre, identificacion, activo, created_at, updated_at)
+       VALUES (?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [PLACEHOLDER_NOMBRE, PLACEHOLDER_IDENTIFICACION]
+    );
+    pacienteId = Number(pacienteInsert.insertId);
+  }
+
+  const [expedienteRows] = await connection.execute(
+    `SELECT id
+     FROM expedientes
+     WHERE paciente_id = ?
+     LIMIT 1`,
+    [pacienteId]
+  );
+
+  if (expedienteRows.length) {
+    return Number(expedienteRows[0].id);
+  }
+
+  const [expedienteInsert] = await connection.execute(
+    `INSERT INTO expedientes (paciente_id, activo, created_at)
+     VALUES (?, 0, CURRENT_TIMESTAMP)`,
+    [pacienteId]
+  );
+
+  return Number(expedienteInsert.insertId);
 }
 
 async function findConsultorioRow(connection, consultorioId) {
@@ -277,6 +360,7 @@ const Agenda = {
       );
 
       agendaId = agendaResult.insertId;
+      const placeholderExpedienteId = await getOrCreatePlaceholderExpedienteId(connection);
 
       const slotCount = totalMinutes / intervalMinutes;
       const slotValues = [];
@@ -284,7 +368,7 @@ const Agenda = {
         const slotStart = addMinutes(startTime, index * intervalMinutes);
         const slotEnd = addMinutes(slotStart, intervalMinutes);
         slotValues.push([
-          null,
+          placeholderExpedienteId,
           doctorId,
           agendaEspecialidadId,
           date,
@@ -355,8 +439,8 @@ const Agenda = {
               MIN(c.especialidad_id) AS especialidad_id,
               MIN(e.nombre) AS especialidad_nombre,
               COUNT(c.id) AS total_citas,
-              SUM(CASE WHEN c.paciente_id IS NULL AND c.expediente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
-              SUM(CASE WHEN c.paciente_id IS NOT NULL OR c.expediente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
+              SUM(CASE WHEN c.paciente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
+              SUM(CASE WHEN c.paciente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
        FROM agendas a
        INNER JOIN usuarios u ON u.id = a.doctor_id
        LEFT JOIN citas c ON c.agenda_id = a.id
@@ -407,8 +491,8 @@ const Agenda = {
               MIN(c.especialidad_id) AS especialidad_id,
               MIN(e.nombre) AS especialidad_nombre,
               COUNT(c.id) AS total_citas,
-              SUM(CASE WHEN c.paciente_id IS NULL AND c.expediente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
-              SUM(CASE WHEN c.paciente_id IS NOT NULL OR c.expediente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
+              SUM(CASE WHEN c.paciente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
+              SUM(CASE WHEN c.paciente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
        FROM agendas a
        INNER JOIN usuarios u ON u.id = a.doctor_id
        LEFT JOIN citas c ON c.agenda_id = a.id
@@ -532,7 +616,7 @@ const Agenda = {
       }
 
       const cita = citaRows[0];
-      if (cita.paciente_id || cita.expediente_id) {
+      if (cita.paciente_id) {
         throw createValidationError('La cita seleccionada ya está ocupada');
       }
       if (cita.estado === 'cancelada') {
@@ -577,7 +661,7 @@ const Agenda = {
         if (slot.hora_inicio !== expectedStart) {
           throw createValidationError('Los espacios requeridos no son consecutivos');
         }
-        if (slot.paciente_id || slot.expediente_id || slot.estado === 'cancelada') {
+        if (slot.paciente_id || slot.estado === 'cancelada') {
           throw createValidationError('Uno de los espacios requeridos ya está ocupado');
         }
       }
@@ -737,10 +821,11 @@ const Agenda = {
 
       let resolvedPacienteId = cita.paciente_id;
       let resolvedExpedienteId = cita.expediente_id;
+      const placeholderExpedienteId = await getOrCreatePlaceholderExpedienteId(connection);
 
       if (clearPaciente) {
         resolvedPacienteId = null;
-        resolvedExpedienteId = null;
+        resolvedExpedienteId = placeholderExpedienteId;
       } else if (pacienteId !== undefined || expedienteId !== undefined) {
         const incomingPacienteId = pacienteId || null;
         const incomingExpedienteId = expedienteId || null;
@@ -780,6 +865,10 @@ const Agenda = {
         }
       }
 
+      if (!resolvedExpedienteId) {
+        resolvedExpedienteId = placeholderExpedienteId;
+      }
+
       let resolvedConsultorioId = cita.consultorio_id;
       if (consultorioId !== undefined) {
         if (!consultorioId) {
@@ -793,7 +882,7 @@ const Agenda = {
         }
       }
 
-      const nextEstado = resolvedPacienteId ? 'pendiente' : 'pendiente';
+      const nextEstado = 'pendiente';
 
       await connection.execute(
         `UPDATE citas

@@ -104,6 +104,14 @@ function handleAgendaError(res, error, fallbackMessage) {
     return res.status(400).json({ error: 'Uno de los ids enviados no existe o no cumple una relación requerida' });
   }
 
+  if (error && error.code === 'ER_BAD_NULL_ERROR') {
+    return res.status(400).json({ error: 'Faltan datos requeridos para completar la operación solicitada' });
+  }
+
+  if (error && error.code === 'ER_TRUNCATED_WRONG_VALUE') {
+    return res.status(400).json({ error: 'Uno de los valores enviados tiene un formato inválido para la base de datos' });
+  }
+
   console.error(fallbackMessage, error.message, error.stack);
   return res.status(500).json({ error: fallbackMessage });
 }
