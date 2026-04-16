@@ -285,6 +285,67 @@ exports.listAgendas = async (req, res) => {
   }
 };
 
+exports.listAgendasByMonth = async (req, res) => {
+  try {
+    const yearRaw = pickFirstDefined([req.query.year, req.query.anio, req.query.año, req.query.anyo]);
+    const monthRaw = pickFirstDefined([req.query.month, req.query.mes]);
+    const doctorId = parsePositiveInt(pickFirstDefined([req.query.doctorId, req.query.doctor_id]));
+
+    const year = parsePositiveInt(yearRaw);
+    const month = parsePositiveInt(monthRaw);
+
+    if (!year || year < 2000 || year > 2100) {
+      return res.status(400).json({
+        error: 'year es obligatorio y debe ser un año válido (2000-2100)',
+        acceptedFields: ['year', 'anio', 'año', 'anyo']
+      });
+    }
+
+    if (!month || month < 1 || month > 12) {
+      return res.status(400).json({
+        error: 'month es obligatorio y debe ser un número entre 1 y 12',
+        acceptedFields: ['month', 'mes']
+      });
+    }
+
+    const agendas = await Agenda.findAgendasByMonth({ year, month, doctorId });
+    return res.status(200).json({ agendas, items: agendas, total: agendas.length, year, month });
+  } catch (error) {
+    return handleAgendaError(res, error, 'Error interno obteniendo agendas por mes');
+  }
+};
+
+exports.listAgendasByEspecialidad = async (req, res) => {
+  try {
+    const especialidadId = parsePositiveInt(pickFirstDefined([
+      req.query.especialidadId,
+      req.query.especialidad_id,
+      req.query.specialtyId,
+      req.query.specialty_id,
+      req.query.especialidad,
+      req.query.specialty
+    ]));
+    const doctorId = parsePositiveInt(pickFirstDefined([req.query.doctorId, req.query.doctor_id]));
+    const date = normalizeDateInput(pickFirstDefined([req.query.date, req.query.fecha]));
+
+    if (!especialidadId) {
+      return res.status(400).json({
+        error: 'especialidadId es obligatorio',
+        acceptedFields: ['especialidadId', 'especialidad_id', 'specialtyId', 'specialty_id', 'especialidad', 'specialty']
+      });
+    }
+
+    if (date && !isValidDate(date)) {
+      return res.status(400).json({ error: 'date debe tener formato YYYY-MM-DD' });
+    }
+
+    const agendas = await Agenda.findAgendasByEspecialidad({ especialidadId, doctorId, date });
+    return res.status(200).json({ agendas, items: agendas, total: agendas.length });
+  } catch (error) {
+    return handleAgendaError(res, error, 'Error interno obteniendo agendas por especialidad');
+  }
+};
+
 exports.getAgendaById = async (req, res) => {
   try {
     const agendaId = parsePositiveInt(req.params.id);

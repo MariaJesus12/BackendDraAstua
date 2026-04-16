@@ -7,6 +7,8 @@ const requireRoles = require('../middlewares/roleMiddleware');
 const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', 'administrador'])];
 
 router.post('/agendas', ...secretariaAccess, agendaController.createAgenda);
+router.get('/agendas/por-mes', ...secretariaAccess, agendaController.listAgendasByMonth);
+router.get('/agendas/por-especialidad', ...secretariaAccess, agendaController.listAgendasByEspecialidad);
 router.get('/agendas', ...secretariaAccess, agendaController.listAgendas);
 router.get('/agendas/:id', ...secretariaAccess, agendaController.getAgendaById);
 router.get('/citas', ...secretariaAccess, agendaController.listCitas);

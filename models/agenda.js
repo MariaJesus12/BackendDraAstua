@@ -893,6 +893,93 @@ const Agenda = {
     return rows.map(mapAgendaRow);
   },
 
+  async findAgendasByMonth({ year, month, doctorId } = {}) {
+    const conditions = [];
+    const params = [];
+
+    conditions.push('YEAR(a.fecha) = ?');
+    params.push(year);
+    conditions.push('MONTH(a.fecha) = ?');
+    params.push(month);
+
+    if (doctorId) {
+      conditions.push('a.doctor_id = ?');
+      params.push(doctorId);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const rows = await db.query(
+      `SELECT a.id,
+              a.doctor_id,
+              u.nombre AS doctor_nombre,
+              DATE_FORMAT(a.fecha, '%Y-%m-%d') AS fecha,
+              TIME_FORMAT(a.hora_inicio, '%H:%i') AS hora_inicio,
+              TIME_FORMAT(a.hora_fin, '%H:%i') AS hora_fin,
+              a.intervalo_minutos,
+              a.created_at,
+              MIN(c.especialidad_id) AS especialidad_id,
+              MIN(e.nombre) AS especialidad_nombre,
+              COUNT(c.id) AS total_citas,
+              SUM(CASE WHEN c.paciente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
+              SUM(CASE WHEN c.paciente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
+       FROM agendas a
+       INNER JOIN usuarios u ON u.id = a.doctor_id
+       LEFT JOIN citas c ON c.agenda_id = a.id
+       LEFT JOIN especialidades e ON e.id = c.especialidad_id
+       ${whereClause}
+       GROUP BY a.id, a.doctor_id, u.nombre, a.fecha, a.hora_inicio, a.hora_fin, a.intervalo_minutos, a.created_at
+       ORDER BY a.fecha ASC, a.id ASC`,
+      params
+    );
+
+    return rows.map(mapAgendaRow);
+  },
+
+  async findAgendasByEspecialidad({ especialidadId, doctorId, date } = {}) {
+    const conditions = [];
+    const params = [];
+
+    conditions.push('c.especialidad_id = ?');
+    params.push(especialidadId);
+
+    if (doctorId) {
+      conditions.push('a.doctor_id = ?');
+      params.push(doctorId);
+    }
+
+    if (date) {
+      conditions.push('a.fecha = ?');
+      params.push(date);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const rows = await db.query(
+      `SELECT a.id,
+              a.doctor_id,
+              u.nombre AS doctor_nombre,
+              DATE_FORMAT(a.fecha, '%Y-%m-%d') AS fecha,
+              TIME_FORMAT(a.hora_inicio, '%H:%i') AS hora_inicio,
+              TIME_FORMAT(a.hora_fin, '%H:%i') AS hora_fin,
+              a.intervalo_minutos,
+              a.created_at,
+              c.especialidad_id,
+              MIN(e.nombre) AS especialidad_nombre,
+              COUNT(c.id) AS total_citas,
+              SUM(CASE WHEN c.paciente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
+              SUM(CASE WHEN c.paciente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
+       FROM agendas a
+       INNER JOIN usuarios u ON u.id = a.doctor_id
+       INNER JOIN citas c ON c.agenda_id = a.id
+       LEFT JOIN especialidades e ON e.id = c.especialidad_id
+       ${whereClause}
+       GROUP BY a.id, a.doctor_id, u.nombre, a.fecha, a.hora_inicio, a.hora_fin, a.intervalo_minutos, a.created_at, c.especialidad_id
+       ORDER BY a.fecha DESC, a.id DESC`,
+      params
+    );
+
+    return rows.map(mapAgendaRow);
+  },
+
   async findCitas({ agendaId, doctorId, date } = {}) {
     const conditions = [];
     const params = [];
