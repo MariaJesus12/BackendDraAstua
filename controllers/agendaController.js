@@ -50,6 +50,27 @@ function parsePositiveInt(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function extractPositiveInt(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    return parsePositiveInt(
+      value.id ??
+      value.value ??
+      value.doctorId ??
+      value.doctor_id ??
+      value.especialidadId ??
+      value.especialidad_id ??
+      value.specialtyId ??
+      value.specialty_id
+    );
+  }
+
+  return parsePositiveInt(value);
+}
+
 function isValidDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
 }
@@ -89,33 +110,97 @@ function handleAgendaError(res, error, fallbackMessage) {
 
 exports.createAgenda = async (req, res) => {
   try {
-    const body = req.body || {};
-    const doctorId = parsePositiveInt(pickFirstDefined([body.doctorId, body.doctor_id]));
-    const especialidadId = parsePositiveInt(pickFirstDefined([body.especialidadId, body.especialidad_id, body.specialtyId, body.specialty_id]));
-    const intervalMinutes = parsePositiveInt(pickFirstDefined([body.intervalMinutes, body.intervalo_minutos, body.interval, body.duracionBase]));
-    const date = normalizeDateInput(pickFirstDefined([body.date, body.fecha]));
-    const startTime = normalizeTimeInput(pickFirstDefined([body.startTime, body.hora_inicio, body.start_time]));
-    const endTime = normalizeTimeInput(pickFirstDefined([body.endTime, body.hora_fin, body.end_time]));
+    const rawBody = req.body || {};
+    const nestedAgenda = rawBody.agenda && typeof rawBody.agenda === 'object' ? rawBody.agenda : {};
+    const body = { ...rawBody, ...nestedAgenda };
+
+    const doctorInput = pickFirstDefined([
+      body.doctorId,
+      body.doctor_id,
+      body.doctor,
+      body.doctorSeleccionado,
+      body.selectedDoctor,
+      body.doctorValue
+    ]);
+    const especialidadInput = pickFirstDefined([
+      body.especialidadId,
+      body.especialidad_id,
+      body.specialtyId,
+      body.specialty_id,
+      body.especialidad,
+      body.specialty,
+      body.especialidadSeleccionada,
+      body.selectedSpecialty,
+      body.specialtyValue
+    ]);
+    const intervalInput = pickFirstDefined([
+      body.intervalMinutes,
+      body.intervalo_minutos,
+      body.interval,
+      body.duracionBase,
+      body.intervalo,
+      body.intervaloMinutos,
+      body.slotDuration,
+      body.duracion
+    ]);
+    const date = normalizeDateInput(pickFirstDefined([
+      body.date,
+      body.fecha,
+      body.selectedDate,
+      body.agendaDate,
+      body.fechaAgenda
+    ]));
+    const startTime = normalizeTimeInput(pickFirstDefined([
+      body.startTime,
+      body.hora_inicio,
+      body.start_time,
+      body.horaInicio,
+      body.horaInicial
+    ]));
+    const endTime = normalizeTimeInput(pickFirstDefined([
+      body.endTime,
+      body.hora_fin,
+      body.end_time,
+      body.horaFin,
+      body.horaFinal
+    ]));
+
+    const doctorId = extractPositiveInt(doctorInput);
+    const especialidadId = extractPositiveInt(especialidadInput);
+    const intervalMinutes = extractPositiveInt(intervalInput);
 
     if (!doctorId) {
-      return res.status(400).json({ error: 'doctorId es obligatorio', acceptedFields: ['doctorId', 'doctor_id'] });
+      return res.status(400).json({
+        error: 'doctorId es obligatorio',
+        receivedKeys: Object.keys(body),
+        acceptedFields: ['doctorId', 'doctor_id', 'doctor', 'doctorSeleccionado', 'selectedDoctor', 'doctorValue']
+      });
     }
 
     if (!date || !isValidDate(date)) {
-      return res.status(400).json({ error: 'date es obligatorio y debe tener formato YYYY-MM-DD', acceptedFields: ['date', 'fecha'] });
+      return res.status(400).json({
+        error: 'date es obligatorio y debe tener formato YYYY-MM-DD',
+        receivedKeys: Object.keys(body),
+        acceptedFields: ['date', 'fecha', 'selectedDate', 'agendaDate', 'fechaAgenda']
+      });
     }
 
     if (!startTime || !isValidTime(startTime) || !endTime || !isValidTime(endTime)) {
       return res.status(400).json({
         error: 'startTime y endTime son obligatorios y deben tener formato HH:MM',
-        acceptedFields: ['startTime', 'hora_inicio', 'start_time', 'endTime', 'hora_fin', 'end_time']
+        receivedKeys: Object.keys(body),
+        acceptedFields: [
+          'startTime', 'hora_inicio', 'start_time', 'horaInicio', 'horaInicial',
+          'endTime', 'hora_fin', 'end_time', 'horaFin', 'horaFinal'
+        ]
       });
     }
 
     if (!intervalMinutes) {
       return res.status(400).json({
         error: 'intervalMinutes es obligatorio y debe ser un entero positivo',
-        acceptedFields: ['intervalMinutes', 'intervalo_minutos', 'interval', 'duracionBase']
+        receivedKeys: Object.keys(body),
+        acceptedFields: ['intervalMinutes', 'intervalo_minutos', 'interval', 'duracionBase', 'intervalo', 'intervaloMinutos', 'slotDuration', 'duracion']
       });
     }
 
