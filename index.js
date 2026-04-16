@@ -109,6 +109,10 @@ app.get('/api/doctors/especialidades', authMiddleware, doctorController.getEspec
 app.get('/api/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/getEspecialidades', authMiddleware, doctorController.getEspecialidades);
 app.post('/api/agendas', ...secretariaAccess, agendaController.createAgenda);
+app.get('/api/agendas/por-mes', ...secretariaAccess, agendaController.listAgendasByMonth);
+app.get('/api/agendas/mes', ...secretariaAccess, agendaController.listAgendasByMonth);
+app.get('/api/agendas/por-especialidad', ...secretariaAccess, agendaController.listAgendasByEspecialidad);
+app.get('/api/agendas/especialidad', ...secretariaAccess, agendaController.listAgendasByEspecialidad);
 app.get('/api/agendas', ...secretariaAccess, agendaController.listAgendas);
 app.get('/api/agendas/:id', ...secretariaAccess, agendaController.getAgendaById);
 app.get('/api/citas', ...secretariaAccess, agendaController.listCitas);
