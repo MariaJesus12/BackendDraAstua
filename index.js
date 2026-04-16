@@ -13,6 +13,7 @@ const doctorController = require('./controllers/doctorController');
 const patientController = require('./controllers/patientController');
 const userController = require('./controllers/userController');
 const secretariaController = require('./controllers/secretariaController');
+const agendaController = require('./controllers/agendaController');
 
 dotenv.config();
 
@@ -107,6 +108,13 @@ app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
 app.get('/api/doctors/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/getEspecialidades', authMiddleware, doctorController.getEspecialidades);
+app.post('/api/agendas', ...secretariaAccess, agendaController.createAgenda);
+app.get('/api/agendas', ...secretariaAccess, agendaController.listAgendas);
+app.get('/api/agendas/:id', ...secretariaAccess, agendaController.getAgendaById);
+app.get('/api/citas', ...secretariaAccess, agendaController.listCitas);
+app.patch('/api/citas/:id/asignar', ...secretariaAccess, agendaController.assignPacienteToCita);
+app.patch('/api/citas/:id', ...secretariaAccess, agendaController.updateCita);
+app.patch('/api/citas/:id/desasignar', ...secretariaAccess, agendaController.unassignPacienteFromCita);
 app.get('/api/consultorios', ...secretariaAccess, secretariaController.getDoctorConsultorios);
 app.get('/api/doctor-visits', ...secretariaAccess, (req, res, next) => {
   const date = req.query.date;
