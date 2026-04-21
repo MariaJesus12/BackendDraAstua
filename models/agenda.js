@@ -1324,7 +1324,7 @@ const Agenda = {
     const requestedDuration = payload.duracion !== undefined ? toPositiveInt(payload.duracion) : undefined;
     const requestedStartTime = payload.startTime !== undefined ? String(payload.startTime).trim() : undefined;
     const requestedEndTime = payload.endTime !== undefined ? String(payload.endTime).trim() : undefined;
-    const moveFollowing = payload.moveFollowing !== undefined ? Boolean(payload.moveFollowing) : true;
+    const moveFollowing = payload.moveFollowing !== undefined ? Boolean(payload.moveFollowing) : false;
     const clearPaciente = Boolean(payload.clearPaciente);
 
     if (!citaId) {
