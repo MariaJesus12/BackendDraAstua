@@ -345,29 +345,41 @@ exports.listAgendasByMonth = async (req, res) => {
 
 exports.listAgendasByEspecialidad = async (req, res) => {
   try {
-    const especialidadId = parsePositiveInt(pickFirstDefined([
+    const especialidadIdRaw = pickFirstDefined([
       req.query.especialidadId,
       req.query.especialidad_id,
       req.query.specialtyId,
-      req.query.specialty_id,
+      req.query.specialty_id
+    ]);
+    const especialidadNombreRaw = pickFirstDefined([
       req.query.especialidad,
-      req.query.specialty
-    ]));
-    const doctorId = parsePositiveInt(pickFirstDefined([req.query.doctorId, req.query.doctor_id]));
-    const date = normalizeDateInput(pickFirstDefined([req.query.date, req.query.fecha]));
+      req.query.especialidadNombre,
+      req.query.especialidad_nombre,
+      req.query.specialty,
+      req.query.specialtyName,
+      req.query.nombre,
+      req.query.name
+    ]);
 
-    if (!especialidadId) {
+    const especialidadId = parsePositiveInt(especialidadIdRaw);
+    const especialidadNombre = especialidadNombreRaw ? String(especialidadNombreRaw).trim() : null;
+
+    if (!especialidadId && !especialidadNombre) {
       return res.status(400).json({
-        error: 'especialidadId es obligatorio',
-        acceptedFields: ['especialidadId', 'especialidad_id', 'specialtyId', 'specialty_id', 'especialidad', 'specialty']
+        error: 'Debe enviar especialidadId o el nombre de la especialidad',
+        acceptedFieldsParaId: ['especialidadId', 'especialidad_id', 'specialtyId', 'specialty_id'],
+        acceptedFieldsParaNombre: ['especialidad', 'especialidadNombre', 'especialidad_nombre', 'specialty', 'specialtyName', 'nombre', 'name']
       });
     }
+
+    const doctorId = parsePositiveInt(pickFirstDefined([req.query.doctorId, req.query.doctor_id]));
+    const date = normalizeDateInput(pickFirstDefined([req.query.date, req.query.fecha]));
 
     if (date && !isValidDate(date)) {
       return res.status(400).json({ error: 'date debe tener formato YYYY-MM-DD' });
     }
 
-    const agendas = await Agenda.findAgendasByEspecialidad({ especialidadId, doctorId, date });
+    const agendas = await Agenda.findAgendasByEspecialidad({ especialidadId, especialidadNombre, doctorId, date });
     return res.status(200).json({ agendas, items: agendas, total: agendas.length });
   } catch (error) {
     return handleAgendaError(res, error, 'Error interno obteniendo agendas por especialidad');

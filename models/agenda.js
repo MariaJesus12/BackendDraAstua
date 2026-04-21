@@ -995,12 +995,17 @@ const Agenda = {
     return rows.map(mapAgendaRow);
   },
 
-  async findAgendasByEspecialidad({ especialidadId, doctorId, date } = {}) {
+  async findAgendasByEspecialidad({ especialidadId, especialidadNombre, doctorId, date } = {}) {
     const conditions = [];
     const params = [];
 
-    conditions.push('c.especialidad_id = ?');
-    params.push(especialidadId);
+    if (especialidadId) {
+      conditions.push('e.id = ?');
+      params.push(especialidadId);
+    } else if (especialidadNombre) {
+      conditions.push('e.nombre LIKE ?');
+      params.push(`%${especialidadNombre}%`);
+    }
 
     if (doctorId) {
       conditions.push('a.doctor_id = ?');
@@ -1012,7 +1017,7 @@ const Agenda = {
       params.push(date);
     }
 
-    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = await db.query(
       `SELECT a.id,
               a.doctor_id,
@@ -1022,17 +1027,17 @@ const Agenda = {
               TIME_FORMAT(a.hora_fin, '%H:%i') AS hora_fin,
               a.intervalo_minutos,
               a.created_at,
-              c.especialidad_id,
+              MIN(e.id) AS especialidad_id,
               MIN(e.nombre) AS especialidad_nombre,
-              COUNT(c.id) AS total_citas,
+              COUNT(DISTINCT c.id) AS total_citas,
               SUM(CASE WHEN c.paciente_id IS NULL AND c.estado = 'pendiente' THEN 1 ELSE 0 END) AS citas_disponibles,
               SUM(CASE WHEN c.paciente_id IS NOT NULL THEN 1 ELSE 0 END) AS citas_ocupadas
        FROM agendas a
        INNER JOIN usuarios u ON u.id = a.doctor_id
        INNER JOIN citas c ON c.agenda_id = a.id
-       LEFT JOIN especialidades e ON e.id = c.especialidad_id
+       INNER JOIN especialidades e ON e.id = c.especialidad_id
        ${whereClause}
-       GROUP BY a.id, a.doctor_id, u.nombre, a.fecha, a.hora_inicio, a.hora_fin, a.intervalo_minutos, a.created_at, c.especialidad_id
+       GROUP BY a.id, a.doctor_id, u.nombre, a.fecha, a.hora_inicio, a.hora_fin, a.intervalo_minutos, a.created_at
        ORDER BY a.fecha DESC, a.id DESC`,
       params
     );
