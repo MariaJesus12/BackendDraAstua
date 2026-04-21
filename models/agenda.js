@@ -5,6 +5,7 @@ const PLACEHOLDER_IDENTIFICACION = 'SLOT-DISPONIBLE-SISTEMA';
 const PLACEHOLDER_NOMBRE = 'Slot Disponible (Sistema)';
 const ALLOWED_TIPO_CONSULTA = ['primera_vez', 'control', 'urgencia'];
 const ALLOWED_ESTADOS = ['pendiente', 'atendida', 'cancelada'];
+const FLEXIBLE_TIMELINE_STEP_MINUTES = 5;
 
 function createValidationError(message, code = 'VALIDATION_ERROR') {
   const error = new Error(message);
@@ -133,10 +134,12 @@ async function rebuildAgendaTimeline(connection, options) {
     citaId,
     citaRows,
     targetValues,
-    placeholderExpedienteId
+    placeholderExpedienteId,
+    timelineStep
   } = options;
 
   const intervalMinutes = Number(agenda.intervalo_minutos);
+  const effectiveStepMinutes = Number(timelineStep) > 0 ? Number(timelineStep) : intervalMinutes;
   const agendaStartTime = agenda.hora_inicio;
   const agendaEndTime = agenda.hora_fin;
   const agendaStartMinutes = timeToMinutes(agendaStartTime);
@@ -208,11 +211,11 @@ async function rebuildAgendaTimeline(connection, options) {
     throw createValidationError('No fue posible calcular el nuevo horario de la cita');
   }
 
-  if (!isAlignedToInterval(agendaStartTime, nextStartTime, intervalMinutes) || !isAlignedToInterval(agendaStartTime, nextEndTime, intervalMinutes)) {
+  if (!isAlignedToInterval(agendaStartTime, nextStartTime, effectiveStepMinutes) || !isAlignedToInterval(agendaStartTime, nextEndTime, effectiveStepMinutes)) {
     throw createValidationError('Las horas de la cita deben respetar el intervalo configurado en la agenda');
   }
 
-  if (nextDuration <= 0 || nextDuration % intervalMinutes !== 0) {
+  if (nextDuration <= 0 || nextDuration % effectiveStepMinutes !== 0) {
     throw createValidationError('La duración de la cita debe ser múltiplo del intervalo de la agenda');
   }
 
@@ -282,12 +285,12 @@ async function rebuildAgendaTimeline(connection, options) {
     }
 
     const gapDuration = itemStartMinutes - scanMinutes;
-    if (gapDuration % intervalMinutes !== 0) {
+    if (gapDuration % effectiveStepMinutes !== 0) {
       throw createValidationError('El reajuste dejó un espacio inválido en la agenda');
     }
 
     while (timeToMinutes(scanTime) < itemStartMinutes) {
-      const slotEndTime = addMinutes(scanTime, intervalMinutes);
+      const slotEndTime = addMinutes(scanTime, effectiveStepMinutes);
       slotValues.push([
         placeholderExpedienteId,
         agenda.doctor_id,
@@ -301,7 +304,7 @@ async function rebuildAgendaTimeline(connection, options) {
         scanTime,
         slotEndTime,
         null,
-        intervalMinutes,
+        effectiveStepMinutes,
         null,
         null
       ]);
@@ -312,12 +315,12 @@ async function rebuildAgendaTimeline(connection, options) {
   }
 
   const remainingDuration = timeToMinutes(agendaEndTime) - timeToMinutes(scanTime);
-  if (remainingDuration % intervalMinutes !== 0) {
+  if (remainingDuration % effectiveStepMinutes !== 0) {
     throw createValidationError('El reajuste dejó un espacio inválido al final de la agenda');
   }
 
   while (timeToMinutes(scanTime) < agendaEndMinutes) {
-    const slotEndTime = addMinutes(scanTime, intervalMinutes);
+    const slotEndTime = addMinutes(scanTime, effectiveStepMinutes);
     slotValues.push([
       placeholderExpedienteId,
       agenda.doctor_id,
@@ -331,7 +334,7 @@ async function rebuildAgendaTimeline(connection, options) {
       scanTime,
       slotEndTime,
       null,
-      intervalMinutes,
+      effectiveStepMinutes,
       null,
       null
     ]);
@@ -1453,6 +1456,30 @@ const Agenda = {
         citaId,
         citaRows: agendaCitaRows,
         placeholderExpedienteId,
+        timelineStep: (() => {
+          const baseInterval = Number(agenda.intervalo_minutos);
+          const hasCustomDuration = requestedDuration !== undefined && (requestedDuration % baseInterval !== 0);
+          const hasCustomStart = requestedStartTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedStartTime, baseInterval);
+          const hasCustomEnd = requestedEndTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedEndTime, baseInterval);
+
+          if (!hasCustomDuration && !hasCustomStart && !hasCustomEnd) {
+            return baseInterval;
+          }
+
+          if (requestedDuration !== undefined && (requestedDuration % FLEXIBLE_TIMELINE_STEP_MINUTES !== 0)) {
+            throw createValidationError('La duración personalizada debe ser múltiplo de 5 minutos');
+          }
+
+          if (requestedStartTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedStartTime, FLEXIBLE_TIMELINE_STEP_MINUTES)) {
+            throw createValidationError('La hora de inicio personalizada debe respetar pasos de 5 minutos');
+          }
+
+          if (requestedEndTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedEndTime, FLEXIBLE_TIMELINE_STEP_MINUTES)) {
+            throw createValidationError('La hora de fin personalizada debe respetar pasos de 5 minutos');
+          }
+
+          return FLEXIBLE_TIMELINE_STEP_MINUTES;
+        })(),
         targetValues: {
           pacienteId: resolvedPacienteId,
           expedienteId: resolvedExpedienteId,
@@ -1466,6 +1493,21 @@ const Agenda = {
           endTime: requestedEndTime !== undefined ? requestedEndTime : undefined
         }
       });
+
+      const baseInterval = Number(agenda.intervalo_minutos);
+      const shouldUseFlexibleStep =
+        (requestedDuration !== undefined && (requestedDuration % baseInterval !== 0)) ||
+        (requestedStartTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedStartTime, baseInterval)) ||
+        (requestedEndTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedEndTime, baseInterval));
+
+      if (shouldUseFlexibleStep && baseInterval !== FLEXIBLE_TIMELINE_STEP_MINUTES) {
+        await connection.execute(
+          `UPDATE agendas
+           SET intervalo_minutos = ?
+           WHERE id = ?`,
+          [FLEXIBLE_TIMELINE_STEP_MINUTES, agenda.id]
+        );
+      }
 
       await connection.commit();
     } catch (error) {
