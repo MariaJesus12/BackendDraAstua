@@ -1,4 +1,5 @@
 const Doctor = require('../models/doctor');
+const Agenda = require('../models/agenda');
 const PAGE_SIZE = 20;
 
 function parseId(value) {
@@ -9,6 +10,22 @@ function parseId(value) {
 function parsePage(value) {
   const page = Number(value);
   return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function parseYear(value) {
+  const year = Number(value);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    return null;
+  }
+  return year;
+}
+
+function parseMonth(value) {
+  const month = Number(value);
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return null;
+  }
+  return month;
 }
 
 function handleDbError(res, error, entityName) {
@@ -221,5 +238,52 @@ exports.getEspecialidades = async (req, res) => {
     });
   } catch (error) {
     return handleDbError(res, error, 'especialidades');
+  }
+};
+
+exports.getMyAgendasByMonth = async (req, res) => {
+  try {
+    const doctorId = parseId(req.user && req.user.id);
+    if (!doctorId) {
+      return res.status(401).json({ error: 'No se pudo identificar al doctor autenticado' });
+    }
+
+    const year = parseYear((req.query && (req.query.year ?? req.query.anio ?? req.query.año ?? req.query.anyo)));
+    const month = parseMonth((req.query && (req.query.month ?? req.query.mes)));
+
+    if (!year) {
+      return res.status(400).json({
+        error: 'year es obligatorio y debe estar entre 2000 y 2100',
+        acceptedFields: ['year', 'anio', 'año', 'anyo']
+      });
+    }
+
+    if (!month) {
+      return res.status(400).json({
+        error: 'month es obligatorio y debe estar entre 1 y 12',
+        acceptedFields: ['month', 'mes']
+      });
+    }
+
+    const agendas = await Agenda.findAgendasByMonth({ year, month, doctorId });
+    const sortedAgendas = agendas
+      .slice()
+      .sort((left, right) => {
+        const leftCreatedAt = new Date(left.created_at).getTime() || 0;
+        const rightCreatedAt = new Date(right.created_at).getTime() || 0;
+        return rightCreatedAt - leftCreatedAt || Number(right.id) - Number(left.id);
+      });
+
+    return res.status(200).json({
+      agendas: sortedAgendas,
+      items: sortedAgendas,
+      total: sortedAgendas.length,
+      year,
+      month,
+      doctorId,
+      sortBy: 'created_at_desc'
+    });
+  } catch (error) {
+    return handleDbError(res, error, 'agendas de doctor');
   }
 };

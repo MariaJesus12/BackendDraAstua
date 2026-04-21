@@ -105,6 +105,9 @@ const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', '
 app.post('/api/doctors', authMiddleware, doctorController.createDoctor);
 app.post('/api/patients', authMiddleware, patientController.createPatient);
 app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
+app.get('/api/doctors/mis-agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
+app.get('/api/doctors/me/agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
+app.get('/api/doctors/my-agendas/month', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/getEspecialidades', authMiddleware, doctorController.getEspecialidades);
