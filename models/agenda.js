@@ -5,7 +5,7 @@ const PLACEHOLDER_IDENTIFICACION = 'SLOT-DISPONIBLE-SISTEMA';
 const PLACEHOLDER_NOMBRE = 'Slot Disponible (Sistema)';
 const ALLOWED_TIPO_CONSULTA = ['primera_vez', 'control', 'urgencia'];
 const ALLOWED_ESTADOS = ['pendiente', 'atendida', 'cancelada'];
-const FLEXIBLE_TIMELINE_STEP_MINUTES = 5;
+const MIN_TIMELINE_STEP_MINUTES = 1;
 
 function createValidationError(message, code = 'VALIDATION_ERROR') {
   const error = new Error(message);
@@ -16,6 +16,32 @@ function createValidationError(message, code = 'VALIDATION_ERROR') {
 function toPositiveInt(value) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function greatestCommonDivisor(a, b) {
+  let x = Math.abs(Number(a) || 0);
+  let y = Math.abs(Number(b) || 0);
+
+  while (y !== 0) {
+    const temp = y;
+    y = x % y;
+    x = temp;
+  }
+
+  return x;
+}
+
+function gcdList(values) {
+  const numbers = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .map((value) => Math.trunc(value));
+
+  if (!numbers.length) {
+    return MIN_TIMELINE_STEP_MINUTES;
+  }
+
+  return numbers.reduce((acc, value) => greatestCommonDivisor(acc, value));
 }
 
 function timeToMinutes(time) {
@@ -82,6 +108,18 @@ function isPersistentScheduledItem(row, intervalMinutes, targetId) {
   }
 
   const duration = getRowDuration(row, intervalMinutes);
+  const isFreePendingSlot =
+    !row.paciente_id &&
+    !row.consultorio_id &&
+    !row.motivo &&
+    !row.notas &&
+    !row.tipo_consulta &&
+    row.estado === 'pendiente';
+
+  if (isFreePendingSlot) {
+    return false;
+  }
+
   return Boolean(
     row.paciente_id ||
     row.consultorio_id ||
@@ -135,7 +173,8 @@ async function rebuildAgendaTimeline(connection, options) {
     citaRows,
     targetValues,
     placeholderExpedienteId,
-    timelineStep
+    timelineStep,
+    preserveFollowingTimes
   } = options;
 
   const intervalMinutes = Number(agenda.intervalo_minutos);
@@ -252,21 +291,35 @@ async function rebuildAgendaTimeline(connection, options) {
   for (let index = targetIndex + 1; index < persistentItems.length; index += 1) {
     const currentItem = persistentItems[index];
     const currentDuration = currentItem.duration;
-    const shiftedEndTime = addMinutes(cursorTime, currentDuration);
-    if (timeToMinutes(shiftedEndTime) > agendaEndMinutes) {
-      throw createValidationError('La agenda no tiene suficiente espacio para reacomodar las citas con la nueva duración');
+    if (preserveFollowingTimes) {
+      if (timeToMinutes(currentItem.hora_inicio) < timeToMinutes(cursorTime)) {
+        throw createValidationError('La cita modificada se traslapa con la siguiente. Ajuste la hora/duración o habilite reacomodar siguientes.');
+      }
+
+      rebuiltItems.push({
+        ...currentItem,
+        duration: currentDuration,
+        duracion: currentDuration
+      });
+
+      cursorTime = currentItem.hora_fin;
+    } else {
+      const shiftedEndTime = addMinutes(cursorTime, currentDuration);
+      if (timeToMinutes(shiftedEndTime) > agendaEndMinutes) {
+        throw createValidationError('La agenda no tiene suficiente espacio para reacomodar las citas con la nueva duración');
+      }
+
+      rebuiltItems.push({
+        ...currentItem,
+        hora: cursorTime,
+        hora_inicio: cursorTime,
+        hora_fin: shiftedEndTime,
+        duration: currentDuration,
+        duracion: currentDuration
+      });
+
+      cursorTime = shiftedEndTime;
     }
-
-    rebuiltItems.push({
-      ...currentItem,
-      hora: cursorTime,
-      hora_inicio: cursorTime,
-      hora_fin: shiftedEndTime,
-      duration: currentDuration,
-      duracion: currentDuration
-    });
-
-    cursorTime = shiftedEndTime;
   }
 
   const finalItems = rebuiltItems.sort((left, right) => {
@@ -1104,10 +1157,11 @@ const Agenda = {
         throw createValidationError('No se puede asignar una cita cancelada');
       }
 
-      const intervalMinutes = Number(cita.intervalo_minutos);
-      const duration = requestedDuration || Number(cita.duracion) || intervalMinutes;
-      if (duration % intervalMinutes !== 0) {
-        throw createValidationError('La duración debe ser múltiplo del intervalo de la agenda');
+      const agendaIntervalMinutes = Number(cita.intervalo_minutos);
+      const slotStepMinutes = Number(cita.duracion) || agendaIntervalMinutes;
+      const duration = requestedDuration || Number(cita.duracion) || agendaIntervalMinutes;
+      if (duration % slotStepMinutes !== 0) {
+        throw createValidationError('La duración debe ser múltiplo del intervalo del espacio seleccionado');
       }
 
       const targetEndTime = addMinutes(cita.hora_inicio, duration);
@@ -1131,14 +1185,14 @@ const Agenda = {
         [cita.agenda_id, cita.hora_inicio, targetEndTime]
       );
 
-      const requiredSlots = duration / intervalMinutes;
+      const requiredSlots = duration / slotStepMinutes;
       if (rangeRows.length !== requiredSlots) {
         throw createValidationError('No hay suficientes espacios consecutivos disponibles para esa duración');
       }
 
       for (let index = 0; index < rangeRows.length; index += 1) {
         const slot = rangeRows[index];
-        const expectedStart = addMinutes(cita.hora_inicio, index * intervalMinutes);
+        const expectedStart = addMinutes(cita.hora_inicio, index * slotStepMinutes);
         if (slot.hora_inicio !== expectedStart) {
           throw createValidationError('Los espacios requeridos no son consecutivos');
         }
@@ -1270,6 +1324,7 @@ const Agenda = {
     const requestedDuration = payload.duracion !== undefined ? toPositiveInt(payload.duracion) : undefined;
     const requestedStartTime = payload.startTime !== undefined ? String(payload.startTime).trim() : undefined;
     const requestedEndTime = payload.endTime !== undefined ? String(payload.endTime).trim() : undefined;
+    const moveFollowing = payload.moveFollowing !== undefined ? Boolean(payload.moveFollowing) : true;
     const clearPaciente = Boolean(payload.clearPaciente);
 
     if (!citaId) {
@@ -1456,6 +1511,7 @@ const Agenda = {
         citaId,
         citaRows: agendaCitaRows,
         placeholderExpedienteId,
+        preserveFollowingTimes: !moveFollowing,
         timelineStep: (() => {
           const baseInterval = Number(agenda.intervalo_minutos);
           const hasCustomDuration = requestedDuration !== undefined && (requestedDuration % baseInterval !== 0);
@@ -1466,19 +1522,32 @@ const Agenda = {
             return baseInterval;
           }
 
-          if (requestedDuration !== undefined && (requestedDuration % FLEXIBLE_TIMELINE_STEP_MINUTES !== 0)) {
-            throw createValidationError('La duración personalizada debe ser múltiplo de 5 minutos');
+          const startOffset = requestedStartTime !== undefined
+            ? Math.abs((timeToMinutes(requestedStartTime) ?? 0) - (timeToMinutes(agenda.hora_inicio) ?? 0))
+            : 0;
+          const endOffset = requestedEndTime !== undefined
+            ? Math.abs((timeToMinutes(requestedEndTime) ?? 0) - (timeToMinutes(agenda.hora_inicio) ?? 0))
+            : 0;
+          const derivedStep = gcdList([
+            baseInterval,
+            requestedDuration,
+            startOffset,
+            endOffset
+          ]) || MIN_TIMELINE_STEP_MINUTES;
+
+          if (requestedDuration !== undefined && (requestedDuration % derivedStep !== 0)) {
+            throw createValidationError(`La duración personalizada debe ser múltiplo de ${derivedStep} minuto(s)`);
           }
 
-          if (requestedStartTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedStartTime, FLEXIBLE_TIMELINE_STEP_MINUTES)) {
-            throw createValidationError('La hora de inicio personalizada debe respetar pasos de 5 minutos');
+          if (requestedStartTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedStartTime, derivedStep)) {
+            throw createValidationError(`La hora de inicio personalizada debe respetar pasos de ${derivedStep} minuto(s)`);
           }
 
-          if (requestedEndTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedEndTime, FLEXIBLE_TIMELINE_STEP_MINUTES)) {
-            throw createValidationError('La hora de fin personalizada debe respetar pasos de 5 minutos');
+          if (requestedEndTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedEndTime, derivedStep)) {
+            throw createValidationError(`La hora de fin personalizada debe respetar pasos de ${derivedStep} minuto(s)`);
           }
 
-          return FLEXIBLE_TIMELINE_STEP_MINUTES;
+          return derivedStep;
         })(),
         targetValues: {
           pacienteId: resolvedPacienteId,
@@ -1493,21 +1562,6 @@ const Agenda = {
           endTime: requestedEndTime !== undefined ? requestedEndTime : undefined
         }
       });
-
-      const baseInterval = Number(agenda.intervalo_minutos);
-      const shouldUseFlexibleStep =
-        (requestedDuration !== undefined && (requestedDuration % baseInterval !== 0)) ||
-        (requestedStartTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedStartTime, baseInterval)) ||
-        (requestedEndTime !== undefined && !isAlignedToInterval(agenda.hora_inicio, requestedEndTime, baseInterval));
-
-      if (shouldUseFlexibleStep && baseInterval !== FLEXIBLE_TIMELINE_STEP_MINUTES) {
-        await connection.execute(
-          `UPDATE agendas
-           SET intervalo_minutos = ?
-           WHERE id = ?`,
-          [FLEXIBLE_TIMELINE_STEP_MINUTES, agenda.id]
-        );
-      }
 
       await connection.commit();
     } catch (error) {

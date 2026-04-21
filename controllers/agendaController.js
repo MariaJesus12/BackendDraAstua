@@ -56,6 +56,34 @@ function parsePositiveInt(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function parseBoolean(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
+    }
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'si', 'sí', 'yes'].includes(normalized)) {
+      return true;
+    }
+    if (['false', '0', 'no'].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
 function extractPositiveInt(value) {
   if (value === undefined || value === null || value === '') {
     return null;
@@ -480,6 +508,11 @@ exports.updateCita = async (req, res) => {
       Object.prototype.hasOwnProperty.call(body, 'hora_fin') ||
       Object.prototype.hasOwnProperty.call(body, 'end_time') ||
       Object.prototype.hasOwnProperty.call(body, 'horaFin');
+    const hasMoveFollowing =
+      Object.prototype.hasOwnProperty.call(body, 'moveFollowing') ||
+      Object.prototype.hasOwnProperty.call(body, 'reacomodarSiguientes') ||
+      Object.prototype.hasOwnProperty.call(body, 'cascade') ||
+      Object.prototype.hasOwnProperty.call(body, 'shiftFollowing');
 
     const pacienteId = hasPacienteId ? parsePositiveInt(pickFirstDefined([body.pacienteId, body.paciente_id])) : undefined;
     const expedienteId = hasExpedienteId ? parsePositiveInt(pickFirstDefined([body.expedienteId, body.expediente_id])) : undefined;
@@ -499,6 +532,17 @@ exports.updateCita = async (req, res) => {
     const endTime = hasEndTime
       ? normalizeTimeInput(pickFirstDefined([body.endTime, body.hora_fin, body.end_time, body.horaFin]))
       : undefined;
+    const moveFollowing = hasMoveFollowing
+      ? parseBoolean(pickFirstDefined([body.moveFollowing, body.reacomodarSiguientes, body.cascade, body.shiftFollowing]))
+      : undefined;
+
+    if (hasMoveFollowing && moveFollowing === null) {
+      return res.status(400).json({
+        error: 'moveFollowing debe ser booleano',
+        acceptedValues: [true, false, 1, 0, 'true', 'false', 'si', 'no'],
+        acceptedFields: ['moveFollowing', 'reacomodarSiguientes', 'cascade', 'shiftFollowing']
+      });
+    }
 
     if (!citaId) {
       return res.status(400).json({ error: 'El id de la cita es inválido' });
@@ -515,7 +559,8 @@ exports.updateCita = async (req, res) => {
       estado,
       duracion,
       startTime,
-      endTime
+      endTime,
+      moveFollowing
     });
 
     return res.status(200).json({ cita });
