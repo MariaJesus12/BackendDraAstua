@@ -495,6 +495,8 @@ exports.updateCita = async (req, res) => {
   try {
     const body = req.body || {};
     const citaId = parsePositiveInt(req.params.id);
+    const userRoleName = String(req.user?.roleName || '').trim().toLowerCase();
+    const isDoctorUser = userRoleName === 'doctor';
     const hasPacienteId = Object.prototype.hasOwnProperty.call(body, 'pacienteId') || Object.prototype.hasOwnProperty.call(body, 'paciente_id');
     const hasExpedienteId = Object.prototype.hasOwnProperty.call(body, 'expedienteId') || Object.prototype.hasOwnProperty.call(body, 'expediente_id');
     const hasConsultorioId =
@@ -525,6 +527,35 @@ exports.updateCita = async (req, res) => {
       Object.prototype.hasOwnProperty.call(body, 'reacomodarSiguientes') ||
       Object.prototype.hasOwnProperty.call(body, 'cascade') ||
       Object.prototype.hasOwnProperty.call(body, 'shiftFollowing');
+
+    if (isDoctorUser) {
+      const doctorTriedUnsupportedFields =
+        hasPacienteId ||
+        hasExpedienteId ||
+        hasConsultorioId ||
+        hasMotivo ||
+        hasNotas ||
+        hasTipoConsulta ||
+        hasDuracion ||
+        hasStartTime ||
+        hasEndTime ||
+        hasMoveFollowing;
+
+      if (!hasEstado) {
+        return res.status(400).json({
+          error: 'El rol doctor solo puede actualizar el estado de la cita en esta ruta',
+          acceptedFields: ['estado', 'status'],
+          acceptedValues: ['pendiente', 'atendida']
+        });
+      }
+
+      if (doctorTriedUnsupportedFields) {
+        return res.status(403).json({
+          error: 'El rol doctor no tiene permisos para actualizar otros campos de la cita',
+          allowedFields: ['estado', 'status']
+        });
+      }
+    }
 
     const pacienteId = hasPacienteId ? parsePositiveInt(pickFirstDefined([body.pacienteId, body.paciente_id])) : undefined;
     const expedienteId = hasExpedienteId ? parsePositiveInt(pickFirstDefined([body.expedienteId, body.expediente_id])) : undefined;
@@ -560,6 +591,23 @@ exports.updateCita = async (req, res) => {
       return res.status(400).json({ error: 'El id de la cita es inválido' });
     }
 
+    if (isDoctorUser && hasEstado) {
+      const normalizedEstado = String(estado || '').trim().toLowerCase();
+      if (!['pendiente', 'atendida'].includes(normalizedEstado)) {
+        return res.status(400).json({
+          error: 'estado invalido. Valores permitidos para el rol doctor: pendiente, atendida',
+          acceptedValues: ['pendiente', 'atendida']
+        });
+      }
+
+      const cita = await Agenda.updateCita({
+        citaId,
+        estado: normalizedEstado
+      });
+
+      return res.status(200).json({ cita });
+    }
+
     const cita = await Agenda.updateCita({
       citaId,
       pacienteId,
@@ -578,6 +626,43 @@ exports.updateCita = async (req, res) => {
     return res.status(200).json({ cita });
   } catch (error) {
     return handleAgendaError(res, error, 'Error interno actualizando cita');
+  }
+};
+
+exports.updateCitaEstado = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const citaId = parsePositiveInt(req.params.id);
+    const hasEstado = Object.prototype.hasOwnProperty.call(body, 'estado') || Object.prototype.hasOwnProperty.call(body, 'status');
+    const estado = hasEstado ? String(body.estado ?? body.status).trim().toLowerCase() : '';
+
+    if (!citaId) {
+      return res.status(400).json({ error: 'El id de la cita es inválido' });
+    }
+
+    if (!hasEstado) {
+      return res.status(400).json({
+        error: 'Debe enviar el estado de la cita',
+        acceptedFields: ['estado', 'status'],
+        acceptedValues: ['pendiente', 'atendida']
+      });
+    }
+
+    if (!['pendiente', 'atendida'].includes(estado)) {
+      return res.status(400).json({
+        error: 'estado invalido. Valores permitidos para esta ruta: pendiente, atendida',
+        acceptedValues: ['pendiente', 'atendida']
+      });
+    }
+
+    const cita = await Agenda.updateCita({
+      citaId,
+      estado
+    });
+
+    return res.status(200).json({ cita });
+  } catch (error) {
+    return handleAgendaError(res, error, 'Error interno actualizando estado de cita');
   }
 };
 

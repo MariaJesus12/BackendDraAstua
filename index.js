@@ -125,7 +125,8 @@ app.get('/api/agendas', ...agendaReadAccess, agendaController.listAgendas);
 app.get('/api/agendas/:id', ...agendaReadAccess, agendaController.getAgendaById);
 app.get('/api/citas', ...agendaReadAccess, agendaController.listCitas);
 app.patch('/api/citas/:id/asignar', ...secretariaAccess, agendaController.assignPacienteToCita);
-app.patch('/api/citas/:id', ...secretariaAccess, agendaController.updateCita);
+app.patch('/api/citas/:id/estado', ...agendaReadAccess, agendaController.updateCitaEstado);
+app.patch('/api/citas/:id', ...agendaReadAccess, agendaController.updateCita);
 app.patch('/api/citas/:id/desasignar', ...secretariaAccess, agendaController.unassignPacienteFromCita);
 app.get('/api/consultorios', ...secretariaAccess, secretariaController.getDoctorConsultorios);
 app.get('/api/doctor-visits', ...secretariaAccess, (req, res, next) => {
