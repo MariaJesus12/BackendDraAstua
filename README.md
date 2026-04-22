@@ -106,7 +106,8 @@ Subida de uno o varios documentos:
 
 - Documento unico: enviar `rutaArchivo` (o alias) y opcionalmente `tipo`, `nombreArchivo`
 - Multiples documentos: enviar array en `documentos` (tambien soporta `documents`, `archivos`, `files`)
-- Tambien se soporta `fileBase64` por documento para subir primero a Azure y luego registrar en BD
+- Tambien se soporta `fileBase64` por documento o archivos en `multipart/form-data`
+- Los archivos se guardan localmente en `uploads/expedientes` y en la tabla `documentos` se guarda `ruta_archivo` con formato `/uploads/expedientes/<archivo>`
 
 Ejemplo de subida multiple:
 

@@ -1,4 +1,6 @@
 const Expediente = require('../models/expediente');
+const fs = require('fs');
+const path = require('path');
 
 const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   'application/pdf',
@@ -24,6 +26,21 @@ const DOCUMENT_EXTENSION_TO_MIME = {
   xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 };
+
+const MIME_TO_EXTENSION = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'text/plain': 'txt',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
+};
+
+const DOCUMENTS_UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'expedientes');
+const DOCUMENTS_PUBLIC_BASE_PATH = '/uploads/expedientes';
 
 function parsePositiveInt(value) {
   const parsed = Number(value);
@@ -162,25 +179,62 @@ function getBodyValueFromDocument(documentPayload, keys) {
   return undefined;
 }
 
-async function uploadToAzureIfPossible({ fileBase64, fileName, mimeType }) {
+function sanitizeFileName(fileName) {
+  const normalized = String(fileName || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const safe = normalized
+    .replace(/[/\\]/g, '_')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return safe || '';
+}
+
+function getExtensionFromMimeType(mimeType) {
+  const normalized = normalizeMimeType(mimeType);
+  return MIME_TO_EXTENSION[normalized] || '';
+}
+
+async function ensureDocumentsUploadDirectory() {
+  await fs.promises.mkdir(DOCUMENTS_UPLOAD_DIR, { recursive: true });
+}
+
+async function saveBufferToLocalStorage({ fileBuffer, fileName, mimeType }) {
+  if (!Buffer.isBuffer(fileBuffer) || !fileBuffer.length) {
+    const uploadError = new Error('Archivo invalido para guardar localmente');
+    uploadError.code = 'VALIDATION_ERROR';
+    throw uploadError;
+  }
+
+  const normalizedMimeType = normalizeMimeType(mimeType) || 'application/octet-stream';
+  const safeName = sanitizeFileName(fileName || '');
+  const providedExt = safeName.includes('.') ? safeName.split('.').pop().toLowerCase() : '';
+  const defaultExt = getExtensionFromMimeType(normalizedMimeType);
+  const resolvedExt = providedExt || defaultExt || 'bin';
+  const baseName = safeName
+    ? safeName.replace(new RegExp(`\\.${providedExt}$`, 'i'), '')
+    : 'documento';
+  const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${baseName}.${resolvedExt}`;
+
+  await ensureDocumentsUploadDirectory();
+  const absolutePath = path.join(DOCUMENTS_UPLOAD_DIR, uniqueName);
+  await fs.promises.writeFile(absolutePath, fileBuffer);
+
+  return {
+    rutaArchivo: `${DOCUMENTS_PUBLIC_BASE_PATH}/${uniqueName}`,
+    tipo: normalizedMimeType,
+    nombreArchivo: safeName || `documento.${resolvedExt}`
+  };
+}
+
+async function saveBase64ToLocalStorage({ fileBase64, fileName, mimeType }) {
   const parsed = parseBase64Input(fileBase64);
   if (!parsed) {
     return null;
-  }
-
-  let azureStorage;
-  try {
-    azureStorage = require('../config/azureStorage');
-  } catch (error) {
-    const uploadError = new Error('No se puede usar subida a Azure porque falta la dependencia @azure/storage-blob');
-    uploadError.code = 'AZURE_NOT_AVAILABLE';
-    throw uploadError;
-  }
-
-  if (!azureStorage || !azureStorage.containerClient) {
-    const uploadError = new Error('Azure Storage no esta configurado. Envie rutaArchivo directa o configure Azure.');
-    uploadError.code = 'AZURE_NOT_CONFIGURED';
-    throw uploadError;
   }
 
   const buffer = Buffer.from(parsed.base64, 'base64');
@@ -190,46 +244,11 @@ async function uploadToAzureIfPossible({ fileBase64, fileName, mimeType }) {
     throw uploadError;
   }
 
-  const resolvedFileName = String(fileName || `documento_${Date.now()}`).trim();
-  const resolvedMimeType = String(mimeType || parsed.mimeType || 'application/octet-stream').trim();
-  const uploadedUrl = await azureStorage.uploadFile(buffer, resolvedFileName, resolvedMimeType);
-  return {
-    rutaArchivo: uploadedUrl,
-    tipo: resolvedMimeType,
-    nombreArchivo: resolvedFileName
-  };
-}
-
-async function uploadBufferToAzureIfPossible({ fileBuffer, fileName, mimeType }) {
-  if (!Buffer.isBuffer(fileBuffer) || !fileBuffer.length) {
-    const uploadError = new Error('Archivo invalido para subir a Azure');
-    uploadError.code = 'VALIDATION_ERROR';
-    throw uploadError;
-  }
-
-  let azureStorage;
-  try {
-    azureStorage = require('../config/azureStorage');
-  } catch (error) {
-    const uploadError = new Error('No se puede usar subida a Azure porque falta la dependencia @azure/storage-blob');
-    uploadError.code = 'AZURE_NOT_AVAILABLE';
-    throw uploadError;
-  }
-
-  if (!azureStorage || !azureStorage.containerClient) {
-    const uploadError = new Error('Azure Storage no esta configurado. Envie rutaArchivo directa o configure Azure.');
-    uploadError.code = 'AZURE_NOT_CONFIGURED';
-    throw uploadError;
-  }
-
-  const resolvedFileName = String(fileName || `documento_${Date.now()}`).trim();
-  const resolvedMimeType = String(mimeType || 'application/octet-stream').trim();
-  const uploadedUrl = await azureStorage.uploadFile(fileBuffer, resolvedFileName, resolvedMimeType);
-  return {
-    rutaArchivo: uploadedUrl,
-    tipo: resolvedMimeType,
-    nombreArchivo: resolvedFileName
-  };
+  return saveBufferToLocalStorage({
+    fileBuffer: buffer,
+    fileName,
+    mimeType: mimeType || parsed.mimeType || 'application/octet-stream'
+  });
 }
 
 function handleError(res, error, fallbackMessage) {
@@ -239,10 +258,6 @@ function handleError(res, error, fallbackMessage) {
 
   if (error && error.code === 'FORBIDDEN') {
     return res.status(403).json({ error: error.message });
-  }
-
-  if (error && (error.code === 'AZURE_NOT_CONFIGURED' || error.code === 'AZURE_NOT_AVAILABLE')) {
-    return res.status(400).json({ error: error.message });
   }
 
   if (error && error.code === 'ER_NO_REFERENCED_ROW_2') {
@@ -370,7 +385,8 @@ exports.attachDocumento = async (req, res) => {
     }
 
     const multipleDocuments = normalizeDocumentPayloadList(body);
-    const documentsToProcess = multipleDocuments.length ? multipleDocuments : [body];
+    const hasBodyValues = Object.keys(body).length > 0;
+    const documentsToProcess = multipleDocuments.length ? [...multipleDocuments] : (hasBodyValues ? [body] : []);
 
     for (const file of multipartFiles) {
       documentsToProcess.push({
@@ -405,7 +421,7 @@ exports.attachDocumento = async (req, res) => {
       let resolvedNombre = getBodyValueFromDocument(docPayload, ['nombreArchivo', 'nombre_archivo', 'fileName', 'filename']);
 
       if (!resolvedRuta && fileBase64) {
-        const uploaded = await uploadToAzureIfPossible({
+        const uploaded = await saveBase64ToLocalStorage({
           fileBase64,
           fileName: resolvedNombre,
           mimeType: resolvedTipo
@@ -416,7 +432,7 @@ exports.attachDocumento = async (req, res) => {
       }
 
       if (!resolvedRuta && fileBuffer) {
-        const uploaded = await uploadBufferToAzureIfPossible({
+        const uploaded = await saveBufferToLocalStorage({
           fileBuffer,
           fileName: resolvedNombre,
           mimeType: resolvedTipo
