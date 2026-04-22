@@ -51,13 +51,73 @@ function normalizeIdArray(rawValue, fieldName) {
     return [];
   }
 
-  const asArray = Array.isArray(rawValue) ? rawValue : [rawValue];
-  const ids = asArray.map((item) => {
-    if (item && typeof item === 'object') {
-      return toPositiveInt(item.id ?? item.value);
+  const parseJsonIfNeeded = (value) => {
+    if (typeof value !== 'string') {
+      return value;
     }
-    return toPositiveInt(item);
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return trimmed;
+    }
+
+    if (!((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}')))) {
+      return trimmed;
+    }
+
+    try {
+      return JSON.parse(trimmed);
+    } catch (_error) {
+      return trimmed;
+    }
+  };
+
+  const resolveIdLikeValue = (value) => {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+
+    const direct = toPositiveInt(value);
+    if (direct !== null) {
+      return direct;
+    }
+
+    if (typeof value === 'object') {
+      const nestedKey = Object.keys(value).find((key) => /(^id$|_id$|Id$|^value$)/.test(key));
+      if (nestedKey) {
+        return resolveIdLikeValue(value[nestedKey]);
+      }
+    }
+
+    return null;
+  };
+
+  const extractId = (item) => {
+    if (item === undefined || item === null || item === '') {
+      return null;
+    }
+
+    if (typeof item === 'string' && item.includes(',')) {
+      return null;
+    }
+
+    return resolveIdLikeValue(item);
+  };
+
+  const normalizedRaw = parseJsonIfNeeded(rawValue);
+  const asArray = Array.isArray(normalizedRaw) ? normalizedRaw : [normalizedRaw];
+  const expandedValues = asArray.flatMap((item) => {
+    const parsedItem = parseJsonIfNeeded(item);
+    if (typeof parsedItem === 'string' && parsedItem.includes(',')) {
+      return parsedItem.split(',').map((part) => part.trim()).filter(Boolean);
+    }
+    if (Array.isArray(parsedItem)) {
+      return parsedItem;
+    }
+    return [parsedItem];
   });
+
+  const ids = expandedValues.map((item) => extractId(item));
 
   if (ids.some((id) => id === null)) {
     throw createValidationError(`${fieldName} debe contener ids enteros positivos`);

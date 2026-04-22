@@ -182,9 +182,33 @@ exports.createObservacion = async (req, res) => {
       descripcion,
       bloqueada: pickFirstDefined([body.bloqueada, body.locked]),
       editable: pickFirstDefined([body.editable]),
-      enfermedadIds: normalizeIdArray(pickFirstDefined([body.enfermedadIds, body.enfermedad_ids, body.enfermedades])),
-      medicamentoIds: normalizeIdArray(pickFirstDefined([body.medicamentoIds, body.medicamento_ids, body.medicamentos])),
-      alergiaIds: normalizeIdArray(pickFirstDefined([body.alergiaIds, body.alergia_ids, body.alergias]))
+      enfermedadIds: normalizeIdArray(
+        pickFirstDefined([
+          body.enfermedadIds,
+          body.enfermedadesIds,
+          body.enfermedad_ids,
+          body.enfermedades_ids,
+          body.enfermedades
+        ])
+      ),
+      medicamentoIds: normalizeIdArray(
+        pickFirstDefined([
+          body.medicamentoIds,
+          body.medicamentosIds,
+          body.medicamento_ids,
+          body.medicamentos_ids,
+          body.medicamentos
+        ])
+      ),
+      alergiaIds: normalizeIdArray(
+        pickFirstDefined([
+          body.alergiaIds,
+          body.alergiasIds,
+          body.alergia_ids,
+          body.alergias_ids,
+          body.alergias
+        ])
+      )
     });
 
     return res.status(201).json({ observacion });
