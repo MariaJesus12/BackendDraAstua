@@ -7,6 +7,7 @@ const doctorRoutes = require('./routes/doctorRoutes');
 const patientRoutes = require('./routes/patientRoutes');
 const secretariaRoutes = require('./routes/secretariaRoutes');
 const agendaRoutes = require('./routes/agendaRoutes');
+const expedienteRoutes = require('./routes/expedienteRoutes');
 const authMiddleware = require('./middlewares/authMiddleware');
 const requireRoles = require('./middlewares/roleMiddleware');
 const doctorController = require('./controllers/doctorController');
@@ -14,6 +15,7 @@ const patientController = require('./controllers/patientController');
 const userController = require('./controllers/userController');
 const secretariaController = require('./controllers/secretariaController');
 const agendaController = require('./controllers/agendaController');
+const expedienteController = require('./controllers/expedienteController');
 
 dotenv.config();
 
@@ -97,6 +99,7 @@ app.use('/api/doctores', doctorRoutes);
 app.use('/api/pacientes', patientRoutes);
 app.use('/api/secretaria', secretariaRoutes);
 app.use('/api/secretaria', agendaRoutes);
+app.use('/api/expedientes', expedienteRoutes);
 app.get('/api/getRoleById/:id', authMiddleware, userController.getRoleById);
 app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
 
@@ -109,6 +112,7 @@ app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
 app.get('/api/doctors/mis-agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/me/agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/my-agendas/month', authMiddleware, doctorController.getMyAgendasByMonth);
+app.get('/api/doctors/citas/:id/expediente', ...agendaReadAccess, expedienteController.openExpedienteByCita);
 app.get('/api/doctors/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/getEspecialidades', authMiddleware, doctorController.getEspecialidades);
