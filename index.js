@@ -102,6 +102,7 @@ app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
 
 // Alias routes (frontend calls without /secretaria prefix)
 const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', 'administrador'])];
+const agendaReadAccess = [authMiddleware, requireRoles(['doctor', 'secretaria', 'admin', 'administrador'])];
 app.post('/api/doctors', authMiddleware, doctorController.createDoctor);
 app.post('/api/patients', authMiddleware, patientController.createPatient);
 app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
@@ -112,13 +113,13 @@ app.get('/api/doctors/especialidades', authMiddleware, doctorController.getEspec
 app.get('/api/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/getEspecialidades', authMiddleware, doctorController.getEspecialidades);
 app.post('/api/agendas', ...secretariaAccess, agendaController.createAgenda);
-app.get('/api/agendas/por-mes', ...secretariaAccess, agendaController.listAgendasByMonth);
-app.get('/api/agendas/mes', ...secretariaAccess, agendaController.listAgendasByMonth);
-app.get('/api/agendas/por-especialidad', ...secretariaAccess, agendaController.listAgendasByEspecialidad);
-app.get('/api/agendas/especialidad', ...secretariaAccess, agendaController.listAgendasByEspecialidad);
-app.get('/api/agendas', ...secretariaAccess, agendaController.listAgendas);
-app.get('/api/agendas/:id', ...secretariaAccess, agendaController.getAgendaById);
-app.get('/api/citas', ...secretariaAccess, agendaController.listCitas);
+app.get('/api/agendas/por-mes', ...agendaReadAccess, agendaController.listAgendasByMonth);
+app.get('/api/agendas/mes', ...agendaReadAccess, agendaController.listAgendasByMonth);
+app.get('/api/agendas/por-especialidad', ...agendaReadAccess, agendaController.listAgendasByEspecialidad);
+app.get('/api/agendas/especialidad', ...agendaReadAccess, agendaController.listAgendasByEspecialidad);
+app.get('/api/agendas', ...agendaReadAccess, agendaController.listAgendas);
+app.get('/api/agendas/:id', ...agendaReadAccess, agendaController.getAgendaById);
+app.get('/api/citas', ...agendaReadAccess, agendaController.listCitas);
 app.patch('/api/citas/:id/asignar', ...secretariaAccess, agendaController.assignPacienteToCita);
 app.patch('/api/citas/:id', ...secretariaAccess, agendaController.updateCita);
 app.patch('/api/citas/:id/desasignar', ...secretariaAccess, agendaController.unassignPacienteFromCita);
