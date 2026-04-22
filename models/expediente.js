@@ -603,13 +603,19 @@ const Expediente = {
       await ensureCatalogIdsExist(connection, medicamentoIds, 'medicamentos', 'medicamentoIds');
       await ensureCatalogIdsExist(connection, alergiaIds, 'alergias', 'alergiaIds');
 
-      const [insertResult] = await connection.execute(
-        `INSERT INTO observaciones (cita_id, doctor_id, descripcion, bloqueada, created_at, expediente_id, editable)
-         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`,
-        [citaId, doctorId, descripcion, bloqueada ? 1 : 0, expedienteId, editable ? 1 : 0]
+      const [detalleResult] = await connection.execute(
+        `INSERT INTO expediente_detalle (expediente_id, doctor_id, observaciones, created_at)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+        [expedienteId, doctorId, descripcion]
       );
 
-      const observacionId = Number(insertResult.insertId);
+      const observacionId = Number(detalleResult.insertId);
+
+      await connection.execute(
+        `INSERT INTO observaciones (id, cita_id, doctor_id, descripcion, bloqueada, created_at, expediente_id, editable)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`,
+        [observacionId, citaId, doctorId, descripcion, bloqueada ? 1 : 0, expedienteId, editable ? 1 : 0]
+      );
 
       if (enfermedadIds.length) {
         const valuesClause = enfermedadIds.map(() => '(?, ?)').join(', ');
