@@ -83,6 +83,50 @@ Payload recomendado para crear paciente:
 - `direccion` (text, opcional)
 - `activo` (boolean opcional, por defecto `true`)
 
+Rutas de expedientes:
+
+- `GET /api/expedientes/citas/:citaId/abrir` (requiere `Authorization: Bearer <token>` y rol `doctor`, `secretaria`, `admin` o `administrador`)
+- `GET /api/expedientes/:id` (requiere `Authorization: Bearer <token>` y rol `doctor`, `secretaria`, `admin` o `administrador`)
+- `POST /api/expedientes/:id/observaciones` (requiere `Authorization: Bearer <token>` y rol `doctor`, `admin` o `administrador`)
+- `POST /api/expedientes/observaciones/:observacionId/documentos` (requiere `Authorization: Bearer <token>` y rol `doctor`, `admin` o `administrador`)
+
+Tipos de documentos permitidos en `POST /api/expedientes/observaciones/:observacionId/documentos`:
+
+- `application/pdf`
+- `image/jpeg`
+- `image/png`
+- `image/webp`
+- `text/plain`
+- `application/msword`
+- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- `application/vnd.ms-excel`
+- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+
+Subida de uno o varios documentos:
+
+- Documento unico: enviar `rutaArchivo` (o alias) y opcionalmente `tipo`, `nombreArchivo`
+- Multiples documentos: enviar array en `documentos` (tambien soporta `documents`, `archivos`, `files`)
+- Tambien se soporta `fileBase64` por documento para subir primero a Azure y luego registrar en BD
+
+Ejemplo de subida multiple:
+
+```json
+{
+   "documentos": [
+      {
+         "nombreArchivo": "laboratorio.pdf",
+         "tipo": "application/pdf",
+         "fileBase64": "data:application/pdf;base64,JVBERi0xLjQK..."
+      },
+      {
+         "nombreArchivo": "rayos_x.png",
+         "tipo": "image/png",
+         "rutaArchivo": "https://storage.example.com/rayos_x.png"
+      }
+   ]
+}
+```
+
 Rutas de secretaria:
 
 - `GET /api/secretaria/doctors` (requiere `Authorization: Bearer <token>`) – Retorna doctores con objeto completo (doctors, items, total)

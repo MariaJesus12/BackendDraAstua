@@ -1,5 +1,30 @@
 const Expediente = require('../models/expediente');
 
+const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/plain',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+]);
+
+const DOCUMENT_EXTENSION_TO_MIME = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  txt: 'text/plain',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+};
+
 function parsePositiveInt(value) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
@@ -49,6 +74,92 @@ function parseBase64Input(input) {
     mimeType: null,
     base64: raw
   };
+}
+
+function normalizeMimeType(mimeType) {
+  const normalized = String(mimeType || '').trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+
+  return normalized.split(';')[0].trim();
+}
+
+function getMimeTypeFromFileName(fileNameOrPath) {
+  const value = String(fileNameOrPath || '').trim();
+  if (!value) {
+    return '';
+  }
+
+  const withoutQuery = value.split('?')[0];
+  const dotIndex = withoutQuery.lastIndexOf('.');
+  if (dotIndex === -1) {
+    return '';
+  }
+
+  const extension = withoutQuery.slice(dotIndex + 1).toLowerCase();
+  return DOCUMENT_EXTENSION_TO_MIME[extension] || '';
+}
+
+function isAllowedDocumentType(mimeType) {
+  const normalized = normalizeMimeType(mimeType);
+  return ALLOWED_DOCUMENT_MIME_TYPES.has(normalized);
+}
+
+function normalizeDocumentPayloadList(body) {
+  const list = pickFirstDefined([
+    body.documentos,
+    body.documents,
+    body.archivos,
+    body.files
+  ]);
+
+  if (list === undefined || list === null || list === '') {
+    return [];
+  }
+
+  let resolved = list;
+  if (typeof resolved === 'string') {
+    const trimmed = resolved.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      try {
+        resolved = JSON.parse(trimmed);
+      } catch (_error) {
+        resolved = trimmed;
+      }
+    }
+  }
+
+  if (Array.isArray(resolved)) {
+    return resolved;
+  }
+
+  if (typeof resolved === 'object') {
+    return [resolved];
+  }
+
+  return [{ rutaArchivo: resolved }];
+}
+
+function getBodyValueFromDocument(documentPayload, keys) {
+  if (!documentPayload || typeof documentPayload !== 'object') {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(documentPayload, key)) {
+      const value = documentPayload[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 async function uploadToAzureIfPossible({ fileBase64, fileName, mimeType }) {
@@ -225,47 +336,89 @@ exports.attachDocumento = async (req, res) => {
       return res.status(400).json({ error: 'El id de la observacion es invalido' });
     }
 
-    const explicitRuta = pickFirstDefined([
-      body.rutaArchivo,
-      body.ruta_archivo,
-      body.fileUrl,
-      body.url,
-      body.path
-    ]);
+    const multipleDocuments = normalizeDocumentPayloadList(body);
+    const documentsToProcess = multipleDocuments.length ? multipleDocuments : [body];
 
-    const fileBase64 = pickFirstDefined([body.fileBase64, body.base64, body.file]);
-    let resolvedRuta = explicitRuta ? String(explicitRuta).trim() : '';
-    let resolvedTipo = pickFirstDefined([body.tipo, body.mimeType, body.mimetype]);
-    let resolvedNombre = pickFirstDefined([body.nombreArchivo, body.nombre_archivo, body.fileName, body.filename]);
-
-    if (!resolvedRuta && fileBase64) {
-      const uploaded = await uploadToAzureIfPossible({
-        fileBase64,
-        fileName: resolvedNombre,
-        mimeType: resolvedTipo
-      });
-      resolvedRuta = uploaded.rutaArchivo;
-      resolvedTipo = uploaded.tipo;
-      resolvedNombre = uploaded.nombreArchivo;
-    }
-
-    if (!resolvedRuta) {
+    if (!documentsToProcess.length) {
       return res.status(400).json({
         error: 'Debe enviar rutaArchivo o fileBase64 para adjuntar el documento',
         acceptedFields: ['rutaArchivo', 'ruta_archivo', 'fileUrl', 'url', 'path', 'fileBase64', 'base64', 'file']
       });
     }
 
-    const documento = await Expediente.attachDocumento({
-      observacionId,
-      citaId: parsePositiveInt(pickFirstDefined([body.citaId, body.cita_id])),
-      uploadedBy: req.user && req.user.id,
-      nombreArchivo: resolvedNombre || 'documento',
-      rutaArchivo: resolvedRuta,
-      tipo: resolvedTipo || 'archivo'
-    });
+    const preparedDocuments = [];
+    const createdDocuments = [];
+    const rootCitaId = parsePositiveInt(pickFirstDefined([body.citaId, body.cita_id]));
 
-    return res.status(201).json({ documento });
+    for (const rawDocument of documentsToProcess) {
+      const docPayload = (rawDocument && typeof rawDocument === 'object')
+        ? rawDocument
+        : { rutaArchivo: rawDocument };
+
+      const explicitRuta = getBodyValueFromDocument(docPayload, ['rutaArchivo', 'ruta_archivo', 'fileUrl', 'url', 'path']);
+      const fileBase64 = getBodyValueFromDocument(docPayload, ['fileBase64', 'base64', 'file']);
+
+      let resolvedRuta = explicitRuta ? String(explicitRuta).trim() : '';
+      let resolvedTipo = getBodyValueFromDocument(docPayload, ['tipo', 'mimeType', 'mimetype']);
+      let resolvedNombre = getBodyValueFromDocument(docPayload, ['nombreArchivo', 'nombre_archivo', 'fileName', 'filename']);
+
+      if (!resolvedRuta && fileBase64) {
+        const uploaded = await uploadToAzureIfPossible({
+          fileBase64,
+          fileName: resolvedNombre,
+          mimeType: resolvedTipo
+        });
+        resolvedRuta = uploaded.rutaArchivo;
+        resolvedTipo = uploaded.tipo;
+        resolvedNombre = uploaded.nombreArchivo;
+      }
+
+      if (!resolvedRuta) {
+        return res.status(400).json({
+          error: 'Cada documento debe incluir rutaArchivo o fileBase64',
+          acceptedFields: ['rutaArchivo', 'ruta_archivo', 'fileUrl', 'url', 'path', 'fileBase64', 'base64', 'file']
+        });
+      }
+
+      const inferredMimeType =
+        normalizeMimeType(resolvedTipo) ||
+        getMimeTypeFromFileName(resolvedNombre) ||
+        getMimeTypeFromFileName(resolvedRuta);
+
+      if (!isAllowedDocumentType(inferredMimeType)) {
+        return res.status(400).json({
+          error: 'Tipo de documento no permitido',
+          allowedMimeTypes: Array.from(ALLOWED_DOCUMENT_MIME_TYPES)
+        });
+      }
+
+      preparedDocuments.push({
+        observacionId,
+        citaId: parsePositiveInt(pickFirstDefined([
+          docPayload.citaId,
+          docPayload.cita_id,
+          rootCitaId
+        ])),
+        uploadedBy: req.user && req.user.id,
+        nombreArchivo: resolvedNombre || `documento_${Date.now()}`,
+        rutaArchivo: resolvedRuta,
+        tipo: inferredMimeType
+      });
+    }
+
+    for (const preparedDocument of preparedDocuments) {
+      const documento = await Expediente.attachDocumento(preparedDocument);
+      createdDocuments.push(documento);
+    }
+
+    if (createdDocuments.length === 1) {
+      return res.status(201).json({ documento: createdDocuments[0] });
+    }
+
+    return res.status(201).json({
+      documentos: createdDocuments,
+      total: createdDocuments.length
+    });
   } catch (error) {
     return handleError(res, error, 'Error interno adjuntando documento al expediente');
   }
