@@ -200,6 +200,38 @@ async function uploadToAzureIfPossible({ fileBase64, fileName, mimeType }) {
   };
 }
 
+async function uploadBufferToAzureIfPossible({ fileBuffer, fileName, mimeType }) {
+  if (!Buffer.isBuffer(fileBuffer) || !fileBuffer.length) {
+    const uploadError = new Error('Archivo invalido para subir a Azure');
+    uploadError.code = 'VALIDATION_ERROR';
+    throw uploadError;
+  }
+
+  let azureStorage;
+  try {
+    azureStorage = require('../config/azureStorage');
+  } catch (error) {
+    const uploadError = new Error('No se puede usar subida a Azure porque falta la dependencia @azure/storage-blob');
+    uploadError.code = 'AZURE_NOT_AVAILABLE';
+    throw uploadError;
+  }
+
+  if (!azureStorage || !azureStorage.containerClient) {
+    const uploadError = new Error('Azure Storage no esta configurado. Envie rutaArchivo directa o configure Azure.');
+    uploadError.code = 'AZURE_NOT_CONFIGURED';
+    throw uploadError;
+  }
+
+  const resolvedFileName = String(fileName || `documento_${Date.now()}`).trim();
+  const resolvedMimeType = String(mimeType || 'application/octet-stream').trim();
+  const uploadedUrl = await azureStorage.uploadFile(fileBuffer, resolvedFileName, resolvedMimeType);
+  return {
+    rutaArchivo: uploadedUrl,
+    tipo: resolvedMimeType,
+    nombreArchivo: resolvedFileName
+  };
+}
+
 function handleError(res, error, fallbackMessage) {
   if (error && error.code === 'VALIDATION_ERROR') {
     return res.status(400).json({ error: error.message });
@@ -331,6 +363,7 @@ exports.createObservacion = async (req, res) => {
 exports.attachDocumento = async (req, res) => {
   try {
     const body = req.body || {};
+    const multipartFiles = Array.isArray(req.files) ? req.files : [];
     const observacionId = parsePositiveInt(req.params.observacionId || req.params.id);
     if (!observacionId) {
       return res.status(400).json({ error: 'El id de la observacion es invalido' });
@@ -338,6 +371,14 @@ exports.attachDocumento = async (req, res) => {
 
     const multipleDocuments = normalizeDocumentPayloadList(body);
     const documentsToProcess = multipleDocuments.length ? multipleDocuments : [body];
+
+    for (const file of multipartFiles) {
+      documentsToProcess.push({
+        fileBuffer: file.buffer,
+        nombreArchivo: file.originalname,
+        tipo: file.mimetype
+      });
+    }
 
     if (!documentsToProcess.length) {
       return res.status(400).json({
@@ -357,6 +398,7 @@ exports.attachDocumento = async (req, res) => {
 
       const explicitRuta = getBodyValueFromDocument(docPayload, ['rutaArchivo', 'ruta_archivo', 'fileUrl', 'url', 'path']);
       const fileBase64 = getBodyValueFromDocument(docPayload, ['fileBase64', 'base64', 'file']);
+      const fileBuffer = Buffer.isBuffer(docPayload.fileBuffer) ? docPayload.fileBuffer : null;
 
       let resolvedRuta = explicitRuta ? String(explicitRuta).trim() : '';
       let resolvedTipo = getBodyValueFromDocument(docPayload, ['tipo', 'mimeType', 'mimetype']);
@@ -365,6 +407,17 @@ exports.attachDocumento = async (req, res) => {
       if (!resolvedRuta && fileBase64) {
         const uploaded = await uploadToAzureIfPossible({
           fileBase64,
+          fileName: resolvedNombre,
+          mimeType: resolvedTipo
+        });
+        resolvedRuta = uploaded.rutaArchivo;
+        resolvedTipo = uploaded.tipo;
+        resolvedNombre = uploaded.nombreArchivo;
+      }
+
+      if (!resolvedRuta && fileBuffer) {
+        const uploaded = await uploadBufferToAzureIfPossible({
+          fileBuffer,
           fileName: resolvedNombre,
           mimeType: resolvedTipo
         });
