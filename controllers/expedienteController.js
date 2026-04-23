@@ -179,6 +179,32 @@ function getBodyValueFromDocument(documentPayload, keys) {
   return undefined;
 }
 
+function hasDocumentLikeFields(documentPayload) {
+  if (!documentPayload || typeof documentPayload !== 'object') {
+    return false;
+  }
+
+  const documentFieldKeys = [
+    'rutaArchivo',
+    'ruta_archivo',
+    'fileUrl',
+    'url',
+    'path',
+    'fileBase64',
+    'base64',
+    'file'
+  ];
+
+  return documentFieldKeys.some((key) => {
+    if (!Object.prototype.hasOwnProperty.call(documentPayload, key)) {
+      return false;
+    }
+
+    const value = documentPayload[key];
+    return value !== undefined && value !== null && String(value).trim() !== '';
+  });
+}
+
 function sanitizeFileName(fileName) {
   const normalized = String(fileName || '').trim();
   if (!normalized) {
@@ -385,8 +411,9 @@ exports.attachDocumento = async (req, res) => {
     }
 
     const multipleDocuments = normalizeDocumentPayloadList(body);
-    const hasBodyValues = Object.keys(body).length > 0;
-    const documentsToProcess = multipleDocuments.length ? [...multipleDocuments] : (hasBodyValues ? [body] : []);
+    const documentsToProcess = multipleDocuments.length
+      ? [...multipleDocuments]
+      : (hasDocumentLikeFields(body) ? [body] : []);
 
     for (const file of multipartFiles) {
       documentsToProcess.push({
