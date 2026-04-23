@@ -60,6 +60,43 @@ function toPositiveInt(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function calcularEdad(fechaNacimiento) {
+  if (!fechaNacimiento) {
+    return null;
+  }
+
+  const hoy = new Date();
+  const nacimiento = new Date(String(fechaNacimiento).trim());
+
+  if (isNaN(nacimiento.getTime())) {
+    return null;
+  }
+
+  let edad = hoy.getFullYear() - nacimiento.getFullYear();
+  const mesActual = hoy.getMonth();
+  const mesNacimiento = nacimiento.getMonth();
+
+  if (
+    mesActual < mesNacimiento ||
+    (mesActual === mesNacimiento && hoy.getDate() < nacimiento.getDate())
+  ) {
+    edad -= 1;
+  }
+
+  return edad >= 0 ? edad : null;
+}
+
+function mapPatientRow(row) {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+    edad: calcularEdad(row.fecha_nacimiento)
+  };
+}
+
 function normalizeRelationIds(rawValue, fieldName) {
   if (rawValue === undefined || rawValue === null || rawValue === '') {
     return [];
@@ -279,7 +316,7 @@ const Patient = {
     );
 
     return {
-      items: rows,
+      items: rows.map(mapPatientRow),
       total: Number(totalRows[0] && totalRows[0].total ? totalRows[0].total : 0)
     };
   },
@@ -299,7 +336,7 @@ const Patient = {
 
     const relations = await getPatientRelations(id);
     return {
-      ...rows[0],
+      ...mapPatientRow(rows[0]),
       ...relations
     };
   },
@@ -328,7 +365,7 @@ const Patient = {
 
     const patientsWithRelations = await Promise.all(
       rows.map(async (row) => ({
-        ...row,
+        ...mapPatientRow(row),
         ...(await getPatientRelations(row.id))
       }))
     );
@@ -372,7 +409,7 @@ const Patient = {
 
     const patientsWithRelations = await Promise.all(
       rows.map(async (row) => ({
-        ...row,
+        ...mapPatientRow(row),
         ...(await getPatientRelations(row.id))
       }))
     );
