@@ -18,6 +18,9 @@ router.get('/getEnfermedades', authMiddleware, patientController.getEnfermedades
 router.get('/:id/relaciones', authMiddleware, patientController.getPatientRelationsById);
 router.get('/:id/relations', authMiddleware, patientController.getPatientRelationsById);
 router.get('/getPatientRelationsById/:id', authMiddleware, patientController.getPatientRelationsById);
+router.get('/:id/catalogos-relaciones', authMiddleware, patientController.getPatientSelectableCatalogsById);
+router.get('/:id/selectable-relations', authMiddleware, patientController.getPatientSelectableCatalogsById);
+router.get('/getPatientSelectableCatalogsById/:id', authMiddleware, patientController.getPatientSelectableCatalogsById);
 router.get('/getPatientById/:id', authMiddleware, patientController.getPatientById);
 router.get('/:id', authMiddleware, patientController.getPatientById);
 

@@ -121,6 +121,61 @@ exports.getPatientRelationsById = async (req, res) => {
   }
 };
 
+exports.getPatientSelectableCatalogsById = async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'El id del paciente es invalido' });
+    }
+
+    const patient = await Patient.findById(id);
+    if (!patient) {
+      return res.status(404).json({ error: 'Paciente no encontrado' });
+    }
+
+    const [medicamentosCatalogo, alergiasCatalogo, enfermedadesCatalogo] = await Promise.all([
+      Patient.findMedicamentos(),
+      Patient.findAlergias(),
+      Patient.findEnfermedades()
+    ]);
+
+    const selectedMedicamentoIds = new Set((patient.medicamento_ids || []).map(Number));
+    const selectedAlergiaIds = new Set((patient.alergia_ids || []).map(Number));
+    const selectedEnfermedadIds = new Set((patient.enfermedad_ids || []).map(Number));
+
+    const medicamentos = medicamentosCatalogo.map((item) => ({
+      ...item,
+      selected: selectedMedicamentoIds.has(Number(item.id))
+    }));
+
+    const alergias = alergiasCatalogo.map((item) => ({
+      ...item,
+      selected: selectedAlergiaIds.has(Number(item.id))
+    }));
+
+    const enfermedades = enfermedadesCatalogo.map((item) => ({
+      ...item,
+      selected: selectedEnfermedadIds.has(Number(item.id))
+    }));
+
+    return res.status(200).json({
+      pacienteId: patient.id,
+      catalogos: {
+        medicamentos,
+        alergias,
+        enfermedades
+      },
+      selected: {
+        medicamento_ids: patient.medicamento_ids || [],
+        alergia_ids: patient.alergia_ids || [],
+        enfermedad_ids: patient.enfermedad_ids || []
+      }
+    });
+  } catch (error) {
+    return handleDbError(res, error, 'pacientes');
+  }
+};
+
 exports.searchPatients = async (req, res) => {
   try {
     const nombre = req.query && req.query.nombre != null ? String(req.query.nombre).trim() : '';
