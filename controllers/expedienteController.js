@@ -235,6 +235,10 @@ function hasDocumentLikeFields(documentPayload) {
   });
 }
 
+function isObjectPlaceholderString(value) {
+  return typeof value === 'string' && value.trim() === '[object Object]';
+}
+
 function sanitizeFileName(fileName) {
   const normalized = String(fileName || '').trim();
   if (!normalized) {
@@ -472,6 +476,14 @@ exports.attachDocumento = async (req, res) => {
       const explicitRuta = getBodyValueFromDocument(docPayload, ['rutaArchivo', 'ruta_archivo', 'fileUrl', 'url', 'path']);
       const fileBase64 = getBodyValueFromDocument(docPayload, ['fileBase64', 'base64', 'file']);
       const fileBuffer = Buffer.isBuffer(docPayload.fileBuffer) ? docPayload.fileBuffer : null;
+
+      if (isObjectPlaceholderString(explicitRuta) || isObjectPlaceholderString(fileBase64)) {
+        return res.status(400).json({
+          error: 'El campo documentos llego como [object Object]. Debe enviar archivos reales en multipart/form-data.',
+          detail: 'En web envie File/Blob en FormData. En React Native envie { uri, name, type } en FormData.',
+          acceptedFields: ['documentos (archivo)', 'files (archivo)', 'fileBase64', 'rutaArchivo']
+        });
+      }
 
       let resolvedRuta = explicitRuta ? String(explicitRuta).trim() : '';
       let resolvedTipo = getBodyValueFromDocument(docPayload, ['tipo', 'mimeType', 'mimetype']);
