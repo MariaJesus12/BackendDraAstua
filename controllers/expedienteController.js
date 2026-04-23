@@ -27,6 +27,14 @@ const DOCUMENT_EXTENSION_TO_MIME = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 };
 
+const MIME_TYPE_ALIASES = {
+  'image/jpg': 'image/jpeg',
+  'application/x-pdf': 'application/pdf',
+  'application/acrobat': 'application/pdf',
+  'applications/vnd.pdf': 'application/pdf',
+  'text/x-log': 'text/plain'
+};
+
 const MIME_TO_EXTENSION = {
   'application/pdf': 'pdf',
   'image/jpeg': 'jpg',
@@ -99,7 +107,8 @@ function normalizeMimeType(mimeType) {
     return '';
   }
 
-  return normalized.split(';')[0].trim();
+  const bareMime = normalized.split(';')[0].trim();
+  return MIME_TYPE_ALIASES[bareMime] || bareMime;
 }
 
 function getMimeTypeFromFileName(fileNameOrPath) {
@@ -121,6 +130,27 @@ function getMimeTypeFromFileName(fileNameOrPath) {
 function isAllowedDocumentType(mimeType) {
   const normalized = normalizeMimeType(mimeType);
   return ALLOWED_DOCUMENT_MIME_TYPES.has(normalized);
+}
+
+function resolveAllowedDocumentMimeType({ providedMimeType, fileName, filePath }) {
+  const normalizedProvidedMime = normalizeMimeType(providedMimeType);
+  const inferredByFileName = getMimeTypeFromFileName(fileName);
+  const inferredByFilePath = getMimeTypeFromFileName(filePath);
+
+  if (isAllowedDocumentType(normalizedProvidedMime)) {
+    return normalizedProvidedMime;
+  }
+
+  // Some clients send application/octet-stream or generic values; extension is a safer fallback.
+  if (isAllowedDocumentType(inferredByFileName)) {
+    return inferredByFileName;
+  }
+
+  if (isAllowedDocumentType(inferredByFilePath)) {
+    return inferredByFilePath;
+  }
+
+  return normalizedProvidedMime || inferredByFileName || inferredByFilePath || '';
 }
 
 function normalizeDocumentPayloadList(body) {
@@ -476,10 +506,11 @@ exports.attachDocumento = async (req, res) => {
         });
       }
 
-      const inferredMimeType =
-        normalizeMimeType(resolvedTipo) ||
-        getMimeTypeFromFileName(resolvedNombre) ||
-        getMimeTypeFromFileName(resolvedRuta);
+      const inferredMimeType = resolveAllowedDocumentMimeType({
+        providedMimeType: resolvedTipo,
+        fileName: resolvedNombre,
+        filePath: resolvedRuta
+      });
 
       if (!isAllowedDocumentType(inferredMimeType)) {
         return res.status(400).json({
