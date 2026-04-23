@@ -144,6 +144,39 @@ async function ensureCatalogIdsExist(connection, ids, tableName, label) {
   }
 }
 
+async function ensurePatientCatalogRelations(connection, options) {
+  const pacienteId = toPositiveInt(options && options.pacienteId);
+  const ids = Array.isArray(options && options.ids) ? options.ids : [];
+  const tableName = String(options && options.tableName || '').trim();
+  const relationColumn = String(options && options.relationColumn || '').trim();
+
+  if (!pacienteId || !ids.length || !tableName || !relationColumn) {
+    return;
+  }
+
+  const placeholders = ids.map(() => '?').join(', ');
+  const [existingRows] = await connection.execute(
+    `SELECT ${relationColumn} AS id
+     FROM ${tableName}
+     WHERE paciente_id = ?
+       AND ${relationColumn} IN (${placeholders})`,
+    [pacienteId, ...ids]
+  );
+
+  const existingIds = new Set(existingRows.map((row) => Number(row.id)));
+  const missingIds = ids.filter((id) => !existingIds.has(Number(id)));
+  if (!missingIds.length) {
+    return;
+  }
+
+  const valuesClause = missingIds.map(() => '(?, ?)').join(', ');
+  const params = missingIds.flatMap((id) => [pacienteId, id]);
+  await connection.execute(
+    `INSERT INTO ${tableName} (paciente_id, ${relationColumn}) VALUES ${valuesClause}`,
+    params
+  );
+}
+
 async function getCitaBaseById(citaId) {
   const rows = await db.query(
     `SELECT c.id,
@@ -643,6 +676,27 @@ const Expediente = {
           params
         );
       }
+
+      await ensurePatientCatalogRelations(connection, {
+        pacienteId: expediente.paciente_id,
+        ids: enfermedadIds,
+        tableName: 'paciente_enfermedades',
+        relationColumn: 'enfermedad_id'
+      });
+
+      await ensurePatientCatalogRelations(connection, {
+        pacienteId: expediente.paciente_id,
+        ids: medicamentoIds,
+        tableName: 'paciente_medicamentos',
+        relationColumn: 'medicamento_id'
+      });
+
+      await ensurePatientCatalogRelations(connection, {
+        pacienteId: expediente.paciente_id,
+        ids: alergiaIds,
+        tableName: 'paciente_alergias',
+        relationColumn: 'alergia_id'
+      });
 
       await connection.commit();
 

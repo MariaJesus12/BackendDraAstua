@@ -93,6 +93,34 @@ exports.getPatientById = async (req, res) => {
   }
 };
 
+exports.getPatientRelationsById = async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'El id del paciente es invalido' });
+    }
+
+    const patient = await Patient.findById(id);
+    if (!patient) {
+      return res.status(404).json({ error: 'Paciente no encontrado' });
+    }
+
+    const relaciones = {
+      pacienteId: patient.id,
+      medicamentos: patient.medicamentos || [],
+      medicamento_ids: patient.medicamento_ids || [],
+      alergias: patient.alergias || [],
+      alergia_ids: patient.alergia_ids || [],
+      enfermedades: patient.enfermedades || [],
+      enfermedad_ids: patient.enfermedad_ids || []
+    };
+
+    return res.status(200).json({ relaciones });
+  } catch (error) {
+    return handleDbError(res, error, 'pacientes');
+  }
+};
+
 exports.searchPatients = async (req, res) => {
   try {
     const nombre = req.query && req.query.nombre != null ? String(req.query.nombre).trim() : '';
