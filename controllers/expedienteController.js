@@ -444,23 +444,37 @@ exports.attachDocumento = async (req, res) => {
       return res.status(400).json({ error: 'El id de la observacion es invalido' });
     }
 
-    const multipleDocuments = normalizeDocumentPayloadList(body);
-    const documentsToProcess = multipleDocuments.length
-      ? [...multipleDocuments]
-      : (hasDocumentLikeFields(body) ? [body] : []);
+    // Build documents list: real multipart files always take priority over body fields.
+    // This avoids the [object Object] problem when the client appends a non-File value to FormData.
+    const documentsToProcess = [];
 
-    for (const file of multipartFiles) {
-      documentsToProcess.push({
-        fileBuffer: file.buffer,
-        nombreArchivo: file.originalname,
-        tipo: file.mimetype
-      });
+    if (multipartFiles.length) {
+      // Files from device (multipart/form-data) — ignore body.documentos entirely
+      for (const file of multipartFiles) {
+        documentsToProcess.push({
+          fileBuffer: file.buffer,
+          nombreArchivo: file.originalname,
+          tipo: file.mimetype
+        });
+      }
+    } else {
+      // No multipart files — try JSON body (documentos array or direct fields)
+      const multipleDocuments = normalizeDocumentPayloadList(body);
+      if (multipleDocuments.length) {
+        documentsToProcess.push(...multipleDocuments);
+      } else if (hasDocumentLikeFields(body)) {
+        documentsToProcess.push(body);
+      }
     }
 
     if (!documentsToProcess.length) {
       return res.status(400).json({
-        error: 'Debe enviar rutaArchivo o fileBase64 para adjuntar el documento',
-        acceptedFields: ['rutaArchivo', 'ruta_archivo', 'fileUrl', 'url', 'path', 'fileBase64', 'base64', 'file']
+        error: 'No se recibio ningun archivo. Envie archivos en multipart/form-data o fileBase64 en JSON.',
+        acceptedMethods: [
+          'multipart/form-data con archivos reales (input de archivo / DocumentPicker)',
+          'JSON con campo fileBase64 (data URI base64)',
+          'JSON con campo rutaArchivo (URL publica)'
+        ]
       });
     }
 
