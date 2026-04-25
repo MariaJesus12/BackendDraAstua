@@ -709,16 +709,14 @@ const Expediente = {
   },
 
   async attachDocumento(payload) {
-    const detalleId = toPositiveInt(payload.detalleId || payload.observacionId);
+    const requestedDetalleId = toPositiveInt(payload.detalleId || payload.observacionId);
     const citaId = toPositiveInt(payload.citaId);
     const uploadedBy = toPositiveInt(payload.uploadedBy);
     const nombreArchivo = normalizeText(payload.nombreArchivo);
     const rutaArchivo = normalizeText(payload.rutaArchivo);
     const tipo = normalizeText(payload.tipo) || 'archivo';
 
-    if (!detalleId) {
-      throw createValidationError('detalleId es obligatorio');
-    }
+    let detalleId = requestedDetalleId;
     if (!uploadedBy) {
       throw createValidationError('uploadedBy es obligatorio');
     }
@@ -729,18 +727,78 @@ const Expediente = {
       throw createValidationError('rutaArchivo es obligatorio');
     }
 
-    const existingDetalle = await db.query(
-      `SELECT ed.id,
-              ed.expediente_id,
-              ed.doctor_id
-       FROM expediente_detalle ed
-       WHERE ed.id = ?
-       LIMIT 1`,
-      [detalleId]
-    );
+    let existingDetalle = [];
 
-    if (!existingDetalle.length) {
-      throw createValidationError('Detalle de expediente no encontrado');
+    if (detalleId) {
+      existingDetalle = await db.query(
+        `SELECT ed.id,
+                ed.expediente_id,
+                ed.doctor_id
+         FROM expediente_detalle ed
+         WHERE ed.id = ?
+         LIMIT 1`,
+        [detalleId]
+      );
+
+      if (!existingDetalle.length) {
+        throw createValidationError('Detalle de expediente no encontrado');
+      }
+    } else {
+      if (!citaId) {
+        throw createValidationError('Debe enviar detalleId u observacionId, o al menos citaId para adjuntar documento');
+      }
+
+      const citaRows = await db.query(
+        `SELECT c.id,
+                c.expediente_id,
+                c.doctor_id
+         FROM citas c
+         WHERE c.id = ?
+         LIMIT 1`,
+        [citaId]
+      );
+
+      if (!citaRows.length) {
+        throw createValidationError('Cita no encontrada');
+      }
+
+      const cita = citaRows[0];
+      const expedienteId = toPositiveInt(cita.expediente_id);
+      const doctorId = toPositiveInt(cita.doctor_id) || uploadedBy;
+
+      if (!expedienteId) {
+        throw createValidationError('La cita no tiene expediente asociado. Abra el expediente de la cita antes de adjuntar documentos');
+      }
+
+      const detalleRows = await db.query(
+        `SELECT ed.id,
+                ed.expediente_id,
+                ed.doctor_id
+         FROM expediente_detalle ed
+         WHERE ed.expediente_id = ?
+           AND ed.doctor_id = ?
+         ORDER BY ed.created_at DESC, ed.id DESC
+         LIMIT 1`,
+        [expedienteId, doctorId]
+      );
+
+      if (detalleRows.length) {
+        existingDetalle = detalleRows;
+        detalleId = toPositiveInt(detalleRows[0].id);
+      } else {
+        const result = await db.query(
+          `INSERT INTO expediente_detalle (expediente_id, doctor_id, observaciones, created_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+          [expedienteId, doctorId, 'Adjunto de documento']
+        );
+
+        detalleId = toPositiveInt(result.insertId);
+        existingDetalle = [{
+          id: detalleId,
+          expediente_id: expedienteId,
+          doctor_id: doctorId
+        }];
+      }
     }
 
     let finalCitaId = citaId;

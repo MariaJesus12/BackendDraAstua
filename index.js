@@ -17,6 +17,7 @@ const userController = require('./controllers/userController');
 const secretariaController = require('./controllers/secretariaController');
 const agendaController = require('./controllers/agendaController');
 const expedienteController = require('./controllers/expedienteController');
+const { expedienteDocumentsUpload } = require('./middlewares/uploadMiddleware');
 
 dotenv.config();
 
@@ -114,6 +115,7 @@ app.get('/api/doctors/mis-agendas/mes', authMiddleware, doctorController.getMyAg
 app.get('/api/doctors/me/agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/my-agendas/month', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/citas/:id/expediente', ...agendaReadAccess, expedienteController.openExpedienteByCita);
+app.post('/api/doctors/citas/:citaId/expediente/documentos', ...agendaReadAccess, expedienteDocumentsUpload, expedienteController.attachDocumento);
 app.get('/api/doctors/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/especialidades', authMiddleware, doctorController.getEspecialidades);
 app.get('/api/getEspecialidades', authMiddleware, doctorController.getEspecialidades);

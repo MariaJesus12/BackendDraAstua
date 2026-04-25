@@ -426,8 +426,12 @@ exports.attachDocumento = async (req, res) => {
       || body.detalle_id
       || body.observacionId
     );
-    if (!detalleId) {
-      return res.status(400).json({ error: 'El id del detalle del expediente es invalido' });
+    const rootCitaId = parsePositiveInt(pickFirstDefined([body.citaId, body.cita_id, req.params.citaId]));
+
+    if (!detalleId && !rootCitaId) {
+      return res.status(400).json({
+        error: 'Debe enviar detalleId (o observacionId) o citaId para adjuntar documentos'
+      });
     }
 
     // Build documents list: real multipart files always take priority over body fields.
@@ -466,7 +470,6 @@ exports.attachDocumento = async (req, res) => {
 
     const preparedDocuments = [];
     const createdDocuments = [];
-    const rootCitaId = parsePositiveInt(pickFirstDefined([body.citaId, body.cita_id]));
 
     for (const rawDocument of documentsToProcess) {
       const docPayload = (rawDocument && typeof rawDocument === 'object')

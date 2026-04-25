@@ -11,6 +11,7 @@ const expedienteWriteAccess = [authMiddleware, requireRoles(['doctor', 'admin', 
 
 router.get('/citas/:citaId/abrir', ...expedienteReadAccess, expedienteController.openExpedienteByCita);
 router.get('/citas/:id/expediente', ...expedienteReadAccess, expedienteController.openExpedienteByCita);
+router.post('/citas/:citaId/documentos', ...expedienteWriteAccess, expedienteDocumentsUpload, expedienteController.attachDocumento);
 router.get('/documentos/sas-temporal', ...expedienteReadAccess, expedienteController.getDocumentoTemporarySas);
 router.post('/documentos/sas-temporal', ...expedienteReadAccess, expedienteController.getDocumentoTemporarySas);
 router.get('/:id', ...expedienteReadAccess, expedienteController.getExpedienteById);
