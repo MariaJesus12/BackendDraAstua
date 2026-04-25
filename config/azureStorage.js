@@ -96,7 +96,22 @@ class AzureStorageService {
         return;
       }
 
-      console.warn('Azure Blob no configurado (faltan AZURE_BLOB_SERVICE_SAS_URL o AZURE_STORAGE_CONNECTION_STRING)');
+      if (this.accountName && this.accountKey) {
+        const protocol = String(process.env.AZURE_STORAGE_PROTOCOL || 'https').trim() || 'https';
+        const endpointSuffix = String(process.env.AZURE_STORAGE_ENDPOINT_SUFFIX || 'blob.core.windows.net').trim() || 'blob.core.windows.net';
+        const serviceUrl = `${protocol}://${this.accountName}.${endpointSuffix}`;
+
+        this.sharedKeyCredential = new StorageSharedKeyCredential(this.accountName, this.accountKey);
+        this.blobServiceClient = new BlobServiceClient(serviceUrl, this.sharedKeyCredential);
+        this.containerClient = this.blobServiceClient.getContainerClient(this.containerName);
+        this.baseUrl = `${serviceUrl}/${this.containerName}`;
+        this.sasQuery = '';
+
+        console.log('Azure Blob configurado via account name/key');
+        return;
+      }
+
+      console.warn('Azure Blob no configurado (faltan AZURE_BLOB_SERVICE_SAS_URL, AZURE_STORAGE_CONNECTION_STRING, o AZURE_STORAGE_ACCOUNT_NAME/AZURE_STORAGE_ACCOUNT_KEY)');
     } catch (error) {
       console.error('Error inicializando Azure Blob:', error.message);
       this.blobServiceClient = null;

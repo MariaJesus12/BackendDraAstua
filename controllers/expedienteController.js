@@ -233,7 +233,7 @@ async function saveBufferToAzureStorage({ fileBuffer, fileName, mimeType }) {
   }
 
   if (!azureStorage || typeof azureStorage.isConfigured !== 'function' || !azureStorage.isConfigured()) {
-    const uploadError = new Error('Azure Blob no esta configurado. Revise AZURE_BLOB_SERVICE_SAS_URL y AZURE_STORAGE_CONTAINER_NAME.');
+    const uploadError = new Error('Azure Blob no esta configurado. Configure AZURE_STORAGE_CONTAINER_NAME junto con AZURE_BLOB_SERVICE_SAS_URL, o AZURE_STORAGE_CONNECTION_STRING, o AZURE_STORAGE_ACCOUNT_NAME/AZURE_STORAGE_ACCOUNT_KEY.');
     uploadError.code = 'AZURE_NOT_CONFIGURED';
     throw uploadError;
   }
