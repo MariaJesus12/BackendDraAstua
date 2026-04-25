@@ -20,6 +20,7 @@ const userController = require('./controllers/userController');
 const secretariaController = require('./controllers/secretariaController');
 const agendaController = require('./controllers/agendaController');
 const expedienteController = require('./controllers/expedienteController');
+const historialMedicoController = require('./controllers/historialMedicoController');
 const { expedienteDocumentsUpload } = require('./middlewares/uploadMiddleware');
 
 dotenv.config();
@@ -114,9 +115,11 @@ app.get('/api/roles/:id', authMiddleware, userController.getRoleById);
 // Alias routes (frontend calls without /secretaria prefix)
 const secretariaAccess = [authMiddleware, requireRoles(['secretaria', 'admin', 'administrador'])];
 const agendaReadAccess = [authMiddleware, requireRoles(['doctor', 'secretaria', 'admin', 'administrador'])];
+const doctorHistoryAccess = [authMiddleware, requireRoles(['doctor', 'admin', 'administrador'])];
 app.post('/api/doctors', authMiddleware, doctorController.createDoctor);
 app.post('/api/patients', authMiddleware, patientController.createPatient);
 app.get('/api/doctors', authMiddleware, secretariaController.getDoctors);
+app.get('/api/doctors/pacientes/:identificacion/historial-medico/pdf', ...doctorHistoryAccess, historialMedicoController.downloadHistorialMedicoPdfByIdentificacion);
 app.get('/api/doctors/mis-agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/me/agendas/mes', authMiddleware, doctorController.getMyAgendasByMonth);
 app.get('/api/doctors/my-agendas/month', authMiddleware, doctorController.getMyAgendasByMonth);
