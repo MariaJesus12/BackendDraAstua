@@ -203,19 +203,19 @@ async function getCitaBaseById(citaId) {
 
 async function getObservacionesByExpedienteId(expedienteId) {
   const observaciones = await db.query(
-    `SELECT o.id,
-            o.expediente_id,
-            o.cita_id,
-            o.doctor_id,
+    `SELECT ed.id,
+            ed.expediente_id,
+            NULL AS cita_id,
+            ed.doctor_id,
             u.nombre AS doctor_nombre,
-            o.descripcion,
-            o.bloqueada,
-            o.editable,
-            o.created_at
-     FROM observaciones o
-     LEFT JOIN usuarios u ON u.id = o.doctor_id
-     WHERE o.expediente_id = ?
-     ORDER BY o.created_at DESC, o.id DESC`,
+            ed.observaciones AS descripcion,
+            0 AS bloqueada,
+            1 AS editable,
+            ed.created_at
+     FROM expediente_detalle ed
+     LEFT JOIN usuarios u ON u.id = ed.doctor_id
+     WHERE ed.expediente_id = ?
+     ORDER BY ed.created_at DESC, ed.id DESC`,
     [expedienteId]
   );
 
@@ -228,7 +228,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
 
   const [enfermedades, medicamentos, alergias, documentos] = await Promise.all([
     db.query(
-      `SELECT ee.expediente_detalle_id AS observacion_id,
+      `SELECT ee.expediente_detalle_id AS detalle_id,
               e.id,
               e.nombre
        FROM expediente_enfermedades ee
@@ -238,7 +238,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
       observationIds
     ),
     db.query(
-      `SELECT em.expediente_detalle_id AS observacion_id,
+      `SELECT em.expediente_detalle_id AS detalle_id,
               m.id,
               m.nombre
        FROM expediente_medicamentos em
@@ -248,7 +248,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
       observationIds
     ),
     db.query(
-      `SELECT ea.expediente_detalle_id AS observacion_id,
+      `SELECT ea.expediente_detalle_id AS detalle_id,
               a.id,
               a.nombre
        FROM expediente_alergias ea
@@ -279,7 +279,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
   const documentosByObs = new Map();
 
   for (const row of enfermedades) {
-    const key = Number(row.observacion_id);
+    const key = Number(row.detalle_id);
     if (!enfermedadesByObs.has(key)) {
       enfermedadesByObs.set(key, []);
     }
@@ -287,7 +287,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
   }
 
   for (const row of medicamentos) {
-    const key = Number(row.observacion_id);
+    const key = Number(row.detalle_id);
     if (!medicamentosByObs.has(key)) {
       medicamentosByObs.set(key, []);
     }
@@ -295,7 +295,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
   }
 
   for (const row of alergias) {
-    const key = Number(row.observacion_id);
+    const key = Number(row.detalle_id);
     if (!alergiasByObs.has(key)) {
       alergiasByObs.set(key, []);
     }
@@ -383,7 +383,7 @@ async function getExpedienteById(expedienteId) {
 async function getObservacionById(observacionId) {
   const rows = await db.query(
     `SELECT id, expediente_id
-     FROM observaciones
+     FROM expediente_detalle
      WHERE id = ?
      LIMIT 1`,
     [observacionId]
@@ -645,12 +645,6 @@ const Expediente = {
 
       const observacionId = Number(detalleResult.insertId);
 
-      await connection.execute(
-        `INSERT INTO observaciones (id, cita_id, doctor_id, descripcion, bloqueada, created_at, expediente_id, editable)
-         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`,
-        [observacionId, citaId, doctorId, descripcion, bloqueada ? 1 : 0, expedienteId, editable ? 1 : 0]
-      );
-
       if (enfermedadIds.length) {
         const valuesClause = enfermedadIds.map(() => '(?, ?)').join(', ');
         const params = enfermedadIds.flatMap((id) => [observacionId, id]);
@@ -737,9 +731,9 @@ const Expediente = {
 
     const existingDetalle = await db.query(
       `SELECT ed.id,
-              o.cita_id
+              ed.expediente_id,
+              ed.doctor_id
        FROM expediente_detalle ed
-       LEFT JOIN observaciones o ON o.id = ed.id
        WHERE ed.id = ?
        LIMIT 1`,
       [detalleId]
@@ -749,9 +743,42 @@ const Expediente = {
       throw createValidationError('Detalle de expediente no encontrado');
     }
 
-    const finalCitaId = citaId || Number(existingDetalle[0].cita_id);
+    let finalCitaId = citaId;
+
     if (!finalCitaId) {
-      throw createValidationError('No se pudo resolver cita_id para el documento');
+      const existingDocuments = await db.query(
+        `SELECT cita_id
+         FROM documentos
+         WHERE detalle_id = ?
+           AND cita_id IS NOT NULL
+         ORDER BY id DESC
+         LIMIT 1`,
+        [detalleId]
+      );
+
+      if (existingDocuments.length) {
+        finalCitaId = toPositiveInt(existingDocuments[0].cita_id);
+      }
+    }
+
+    if (!finalCitaId) {
+      const fallbackCita = await db.query(
+        `SELECT c.id
+         FROM citas c
+         WHERE c.expediente_id = ?
+           AND (? IS NULL OR c.doctor_id = ?)
+         ORDER BY c.fecha DESC, c.hora_inicio DESC, c.id DESC
+         LIMIT 1`,
+        [existingDetalle[0].expediente_id, existingDetalle[0].doctor_id, existingDetalle[0].doctor_id]
+      );
+
+      if (fallbackCita.length) {
+        finalCitaId = toPositiveInt(fallbackCita[0].id);
+      }
+    }
+
+    if (!finalCitaId) {
+      throw createValidationError('No se pudo resolver cita_id para el documento. Envie citaId en la solicitud.');
     }
 
     const result = await db.query(
