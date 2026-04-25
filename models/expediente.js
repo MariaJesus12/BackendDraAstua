@@ -259,7 +259,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
     ),
     db.query(
       `SELECT d.id,
-              d.observacion_id,
+              d.detalle_id,
               d.cita_id,
               d.nombre_archivo,
               d.ruta_archivo,
@@ -267,7 +267,7 @@ async function getObservacionesByExpedienteId(expedienteId) {
               d.uploaded_by,
               d.created_at
        FROM documentos d
-       WHERE d.observacion_id IN (${placeholders})
+       WHERE d.detalle_id IN (${placeholders})
        ORDER BY d.created_at DESC, d.id DESC`,
       observationIds
     )
@@ -303,13 +303,14 @@ async function getObservacionesByExpedienteId(expedienteId) {
   }
 
   for (const row of documentos) {
-    const key = Number(row.observacion_id);
+    const key = Number(row.detalle_id);
     if (!documentosByObs.has(key)) {
       documentosByObs.set(key, []);
     }
     documentosByObs.get(key).push({
       id: row.id,
-      observacionId: row.observacion_id,
+      detalleId: row.detalle_id,
+      observacionId: row.detalle_id,
       citaId: row.cita_id,
       nombreArchivo: row.nombre_archivo,
       rutaArchivo: row.ruta_archivo,
@@ -714,15 +715,15 @@ const Expediente = {
   },
 
   async attachDocumento(payload) {
-    const observacionId = toPositiveInt(payload.observacionId);
+    const detalleId = toPositiveInt(payload.detalleId || payload.observacionId);
     const citaId = toPositiveInt(payload.citaId);
     const uploadedBy = toPositiveInt(payload.uploadedBy);
     const nombreArchivo = normalizeText(payload.nombreArchivo);
     const rutaArchivo = normalizeText(payload.rutaArchivo);
     const tipo = normalizeText(payload.tipo) || 'archivo';
 
-    if (!observacionId) {
-      throw createValidationError('observacionId es obligatorio');
+    if (!detalleId) {
+      throw createValidationError('detalleId es obligatorio');
     }
     if (!uploadedBy) {
       throw createValidationError('uploadedBy es obligatorio');
@@ -734,27 +735,29 @@ const Expediente = {
       throw createValidationError('rutaArchivo es obligatorio');
     }
 
-    const existingObservation = await db.query(
-      `SELECT id, cita_id
-       FROM observaciones
-       WHERE id = ?
+    const existingDetalle = await db.query(
+      `SELECT ed.id,
+              o.cita_id
+       FROM expediente_detalle ed
+       LEFT JOIN observaciones o ON o.id = ed.id
+       WHERE ed.id = ?
        LIMIT 1`,
-      [observacionId]
+      [detalleId]
     );
 
-    if (!existingObservation.length) {
-      throw createValidationError('Observacion no encontrada');
+    if (!existingDetalle.length) {
+      throw createValidationError('Detalle de expediente no encontrado');
     }
 
-    const finalCitaId = citaId || Number(existingObservation[0].cita_id);
+    const finalCitaId = citaId || Number(existingDetalle[0].cita_id);
     if (!finalCitaId) {
       throw createValidationError('No se pudo resolver cita_id para el documento');
     }
 
     const result = await db.query(
-      `INSERT INTO documentos (cita_id, nombre_archivo, ruta_archivo, tipo, uploaded_by, created_at, observacion_id)
+      `INSERT INTO documentos (cita_id, nombre_archivo, ruta_archivo, tipo, uploaded_by, created_at, detalle_id)
        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
-      [finalCitaId, nombreArchivo, rutaArchivo, tipo, uploadedBy, observacionId]
+      [finalCitaId, nombreArchivo, rutaArchivo, tipo, uploadedBy, detalleId]
     );
 
     const insertedId = Number(result.insertId || 0);
@@ -766,7 +769,7 @@ const Expediente = {
               tipo,
               uploaded_by,
               created_at,
-              observacion_id
+              detalle_id
        FROM documentos
        WHERE id = ?
        LIMIT 1`,
@@ -776,7 +779,8 @@ const Expediente = {
     const row = rows[0];
     return {
       id: row.id,
-      observacionId: row.observacion_id,
+      detalleId: row.detalle_id,
+      observacionId: row.detalle_id,
       citaId: row.cita_id,
       nombreArchivo: row.nombre_archivo,
       rutaArchivo: row.ruta_archivo,

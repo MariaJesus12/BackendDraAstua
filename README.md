@@ -107,7 +107,38 @@ Subida de uno o varios documentos:
 - Documento unico: enviar `rutaArchivo` (o alias) y opcionalmente `tipo`, `nombreArchivo`
 - Multiples documentos: enviar array en `documentos` (tambien soporta `documents`, `archivos`, `files`)
 - Tambien se soporta `fileBase64` por documento o archivos en `multipart/form-data`
-- Los archivos se guardan localmente en `uploads/expedientes` y en la tabla `documentos` se guarda `ruta_archivo` con formato `/uploads/expedientes/<archivo>`
+- Si `DOCUMENT_STORAGE_PROVIDER=azure`, los archivos se suben a Azure Blob y en `documentos.ruta_archivo` se guarda la URL del blob
+- Si `DOCUMENT_STORAGE_PROVIDER=local`, los archivos se guardan en `uploads/expedientes` y en `documentos.ruta_archivo` se guarda `/uploads/expedientes/<archivo>`
+
+Configuracion Azure Blob para documentos:
+
+- `DOCUMENT_STORAGE_PROVIDER=azure`
+- `USE_AZURE_BLOB_STORAGE=true`
+- `AZURE_BLOB_SERVICE_SAS_URL=<sas_url_del_blob_service>`
+- `AZURE_STORAGE_CONTAINER_NAME=documentos`
+- `AZURE_STORAGE_ACCOUNT_NAME=<nombre_de_la_cuenta>` (requerido para generar SAS temporales desde backend)
+- `AZURE_STORAGE_ACCOUNT_KEY=<account_key>` (requerido para generar SAS temporales desde backend)
+- `AZURE_STORE_URL_WITH_SAS=true`
+- `AZURE_AUTO_CREATE_CONTAINER=true` (opcional)
+
+Notas Azure:
+
+- Se recomienda SAS URL de Blob service con permisos de escritura para blobs.
+- Si el contenedor no existe y `AZURE_AUTO_CREATE_CONTAINER=true`, la API intenta crearlo automaticamente.
+
+Endpoint para generar SAS temporal de lectura desde backend:
+
+- `GET /api/expedientes/documentos/sas-temporal?rutaArchivo=<url_blob>&expiresInMinutes=15`
+- `POST /api/expedientes/documentos/sas-temporal`
+
+Body para `POST /api/expedientes/documentos/sas-temporal`:
+
+```json
+{
+   "rutaArchivo": "https://<account>.blob.core.windows.net/documentos/archivo.pdf",
+   "expiresInMinutes": 15
+}
+```
 
 Ejemplo de subida multiple:
 

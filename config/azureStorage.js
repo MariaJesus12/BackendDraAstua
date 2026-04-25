@@ -1,128 +1,249 @@
-const { BlobServiceClient } = require('@azure/storage-blob');
+const {
+  BlobServiceClient,
+  StorageSharedKeyCredential,
+  BlobSASPermissions,
+  generateBlobSASQueryParameters
+} = require('@azure/storage-blob');
 
-/**
- * Servicio para gestionar la subida y eliminación de archivos en Azure Blob Storage
- */
+function toBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'si', 'yes'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 class AzureStorageService {
-    constructor() {
-        const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-        const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'imagenes';
-        
-        if (!connectionString) {
-            console.warn('⚠️ AZURE_STORAGE_CONNECTION_STRING no configurado');
-            this.blobServiceClient = null;
-            this.containerClient = null;
-            this.baseUrl = null;
-        } else {    
-            console.log('✅ Azure Storage configurado');
-            this.blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-            this.containerName = containerName;
-            this.containerClient = this.blobServiceClient.getContainerClient(containerName);
-            
-            // Extraer URL base del contenedor (sin SAS token)
-            this.baseUrl = `https://imagesperson.blob.core.windows.net/${containerName}`;
-        }
+  constructor() {
+    this.containerName = String(process.env.AZURE_STORAGE_CONTAINER_NAME || 'documentos').trim();
+    this.sasServiceUrl = String(process.env.AZURE_BLOB_SERVICE_SAS_URL || '').trim();
+    this.connectionString = String(process.env.AZURE_STORAGE_CONNECTION_STRING || '').trim();
+    this.storeUrlWithSas = toBoolean(process.env.AZURE_STORE_URL_WITH_SAS, true);
+    this.accountName = String(process.env.AZURE_STORAGE_ACCOUNT_NAME || '').trim();
+    this.accountKey = String(process.env.AZURE_STORAGE_ACCOUNT_KEY || '').trim();
+
+    this.blobServiceClient = null;
+    this.containerClient = null;
+    this.baseUrl = null;
+    this.sasQuery = '';
+    this.sharedKeyCredential = null;
+
+    this.initialize();
+  }
+
+  parseConnectionStringCredential() {
+    if (!this.connectionString) {
+      return;
     }
 
-    /**
-     * Sube un archivo a Azure Blob Storage
-     * @param {Buffer} fileBuffer - Contenido del archivo en memoria
-     * @param {string} fileName - Nombre original del archivo
-     * @param {string} mimeType - Tipo MIME (image/jpeg, image/png, etc.)
-     * @returns {Promise<string>} URL pública del archivo (sin SAS token)
-     */
-    async uploadFile(fileBuffer, fileName, mimeType) {
-        try {
-            if (!this.containerClient) {
-                throw new Error('Azure Storage no está configurado');
-            }
-
-            // Sanitizar nombre: remover caracteres especiales y acentos
-            const sanitizedFileName = fileName
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '') // Remover acentos
-                .replace(/[^a-zA-Z0-9.-]/g, '_'); // Remover caracteres especiales
-            
-            // Generar nombre único usando timestamp
-            const timestamp = Date.now();
-            const uniqueFileName = `${timestamp}_${sanitizedFileName}`;
-
-            // Obtener referencia al blob
-            const blockBlobClient = this.containerClient.getBlockBlobClient(uniqueFileName);
-
-            // Subir archivo con headers HTTP apropiados
-            await blockBlobClient.uploadData(fileBuffer, {
-                blobHTTPHeaders: {
-                    blobContentType: mimeType
-                }
-            });
-
-            // Retornar URL base sin SAS token (más corta para BD)
-            const cleanUrl = `${this.baseUrl}/${uniqueFileName}`;
-            
-            return cleanUrl;
-        } catch (error) {
-            console.error('❌ Error subiendo archivo a Azure:', error);
-            throw new Error(`Error al subir la imagen: ${error.message}`);
-        }
+    const parts = this.connectionString.split(';').map((item) => item.trim()).filter(Boolean);
+    const values = {};
+    for (const part of parts) {
+      const [key, ...rest] = part.split('=');
+      if (!key || !rest.length) {
+        continue;
+      }
+      values[key] = rest.join('=');
     }
 
-    /**
-     * Elimina un archivo de Azure Blob Storage
-     * @param {string} fileUrl - URL del archivo a eliminar (con o sin SAS token)
-     * @returns {Promise<boolean>} true si se eliminó exitosamente
-     */
-    async deleteFile(fileUrl) {
-        try {
-            if (!this.containerClient || !fileUrl) {
-                return false;
-            }
+    if (values.AccountName && values.AccountKey) {
+      this.accountName = values.AccountName;
+      this.accountKey = values.AccountKey;
+    }
+  }
 
-            // Extraer nombre del archivo de la URL (antes del query string)
-            const fileName = fileUrl.split('/').pop().split('?')[0];
-            
-            const blockBlobClient = this.containerClient.getBlockBlobClient(fileName);
-            
-            // Eliminar solo si existe (no falla si no existe)
-            await blockBlobClient.deleteIfExists();
-            
-            return true;
-        } catch (error) {
-            console.error('❌ Error eliminando archivo de Azure:', error);
-            return false;
-        }
+  setupSharedKeyCredential() {
+    if (!this.accountName || !this.accountKey) {
+      this.sharedKeyCredential = null;
+      return;
     }
 
-    /**
-     * Genera URL completa con SAS token para acceso público
-     * @param {string} cleanUrl - URL limpia sin SAS token
-     * @returns {string} URL con SAS token para acceso público
-     */
-    getPublicUrl(cleanUrl) {
-        if (!cleanUrl) return null;
-        
-        // Si ya tiene SAS token, retornarla tal cual
-        if (cleanUrl.includes('?')) return cleanUrl;
-        
-        // Agregar SAS token de las variables de entorno
-        const sasToken = process.env.AZURE_SAS_TOKEN || 
-            'sp=racwdli&st=2025-12-11T00:17:17Z&se=2026-07-26T08:32:17Z&sv=2024-11-04&sr=c&sig=8Gi%2Fj0UG7m05Opk%2BY2Wy7MXNNViiRJIixsEigYPhCRs%3D';
-        
-        return `${cleanUrl}?${sasToken}`;
+    this.sharedKeyCredential = new StorageSharedKeyCredential(this.accountName, this.accountKey);
+  }
+
+  initialize() {
+    try {
+      this.parseConnectionStringCredential();
+
+      if (this.sasServiceUrl) {
+        this.blobServiceClient = new BlobServiceClient(this.sasServiceUrl);
+        this.containerClient = this.blobServiceClient.getContainerClient(this.containerName);
+
+        const parsed = new URL(this.sasServiceUrl);
+        this.baseUrl = `${parsed.origin}/${this.containerName}`;
+        this.sasQuery = parsed.search ? parsed.search.replace(/^\?/, '') : '';
+        this.setupSharedKeyCredential();
+        console.log('Azure Blob configurado via SAS URL');
+        return;
+      }
+
+      if (this.connectionString) {
+        this.blobServiceClient = BlobServiceClient.fromConnectionString(this.connectionString);
+        this.containerClient = this.blobServiceClient.getContainerClient(this.containerName);
+        const accountName = this.blobServiceClient.accountName;
+        this.baseUrl = `https://${accountName}.blob.core.windows.net/${this.containerName}`;
+        this.sasQuery = String(process.env.AZURE_SAS_TOKEN || '').trim().replace(/^\?/, '');
+        this.setupSharedKeyCredential();
+        console.log('Azure Blob configurado via connection string');
+        return;
+      }
+
+      console.warn('Azure Blob no configurado (faltan AZURE_BLOB_SERVICE_SAS_URL o AZURE_STORAGE_CONNECTION_STRING)');
+    } catch (error) {
+      console.error('Error inicializando Azure Blob:', error.message);
+      this.blobServiceClient = null;
+      this.containerClient = null;
+      this.baseUrl = null;
+      this.sasQuery = '';
+      this.sharedKeyCredential = null;
+    }
+  }
+
+  isConfigured() {
+    return Boolean(this.containerClient && this.baseUrl);
+  }
+
+  canGenerateTemporarySas() {
+    return Boolean(this.sharedKeyCredential);
+  }
+
+  extractBlobName(fileUrl) {
+    const raw = String(fileUrl || '').trim();
+    if (!raw) {
+      return null;
     }
 
-    /**
-     * Verifica si el contenedor existe en Azure
-     * @returns {Promise<boolean>}
-     */
-    async containerExists() {
-        try {
-            return await this.containerClient.exists();
-        } catch (error) {
-            console.error('Error verificando contenedor:', error);
-            return false;
-        }
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch (_error) {
+      return null;
     }
+
+    const containerPrefix = `/${this.containerName}/`;
+    if (!parsed.pathname.startsWith(containerPrefix)) {
+      return null;
+    }
+
+    const blobName = decodeURIComponent(parsed.pathname.slice(containerPrefix.length));
+    return blobName || null;
+  }
+
+  async generateTemporaryBlobUrl(fileUrl, options = {}) {
+    if (!this.isConfigured()) {
+      throw new Error('Azure Blob no esta configurado');
+    }
+
+    if (!this.canGenerateTemporarySas()) {
+      throw new Error('No se puede generar SAS temporal sin credenciales de cuenta (AccountKey)');
+    }
+
+    const blobName = this.extractBlobName(fileUrl);
+    if (!blobName) {
+      throw new Error(`La URL no pertenece al contenedor configurado (${this.containerName})`);
+    }
+
+    const expiresInMinutesRaw = Number(options.expiresInMinutes);
+    const expiresInMinutes = Number.isFinite(expiresInMinutesRaw) && expiresInMinutesRaw > 0
+      ? Math.min(Math.trunc(expiresInMinutesRaw), 24 * 60)
+      : 15;
+
+    const startsOn = new Date(Date.now() - (5 * 60 * 1000));
+    const expiresOn = new Date(Date.now() + (expiresInMinutes * 60 * 1000));
+    const permissions = BlobSASPermissions.parse(String(options.permissions || 'r'));
+
+    const sasQuery = generateBlobSASQueryParameters(
+      {
+        containerName: this.containerName,
+        blobName,
+        startsOn,
+        expiresOn,
+        permissions,
+        protocol: 'https'
+      },
+      this.sharedKeyCredential
+    ).toString();
+
+    return {
+      url: `${this.baseUrl}/${encodeURIComponent(blobName).replace(/%2F/g, '/')}` + `?${sasQuery}`,
+      expiresOn: expiresOn.toISOString(),
+      expiresInMinutes
+    };
+  }
+
+  async ensureContainerExists() {
+    if (!this.containerClient) {
+      throw new Error('Azure Blob no esta configurado');
+    }
+
+    const autoCreate = toBoolean(process.env.AZURE_AUTO_CREATE_CONTAINER, false);
+    if (autoCreate) {
+      await this.containerClient.createIfNotExists();
+      return;
+    }
+
+    const exists = await this.containerClient.exists();
+    if (!exists) {
+      throw new Error(`El contenedor de Azure no existe: ${this.containerName}`);
+    }
+  }
+
+  buildFileName(fileName) {
+    const safeName = String(fileName || 'documento')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const baseName = safeName || 'documento';
+    return `${Date.now()}_${suffix}_${baseName}`;
+  }
+
+  getUrl(cleanUrl) {
+    if (!cleanUrl) {
+      return cleanUrl;
+    }
+
+    if (!this.storeUrlWithSas || !this.sasQuery) {
+      return cleanUrl;
+    }
+
+    return `${cleanUrl}?${this.sasQuery}`;
+  }
+
+  async uploadFile(fileBuffer, fileName, mimeType) {
+    if (!Buffer.isBuffer(fileBuffer) || !fileBuffer.length) {
+      throw new Error('fileBuffer invalido');
+    }
+
+    if (!this.containerClient || !this.baseUrl) {
+      throw new Error('Azure Blob no esta configurado');
+    }
+
+    await this.ensureContainerExists();
+
+    const blobName = this.buildFileName(fileName);
+    const blockBlobClient = this.containerClient.getBlockBlobClient(blobName);
+
+    await blockBlobClient.uploadData(fileBuffer, {
+      blobHTTPHeaders: {
+        blobContentType: String(mimeType || 'application/octet-stream').trim()
+      }
+    });
+
+    const cleanUrl = `${this.baseUrl}/${blobName}`;
+    return this.getUrl(cleanUrl);
+  }
 }
 
 module.exports = new AzureStorageService();

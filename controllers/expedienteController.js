@@ -1,6 +1,4 @@
 const Expediente = require('../models/expediente');
-const fs = require('fs');
-const path = require('path');
 
 const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   'application/pdf',
@@ -34,21 +32,6 @@ const MIME_TYPE_ALIASES = {
   'applications/vnd.pdf': 'application/pdf',
   'text/x-log': 'text/plain'
 };
-
-const MIME_TO_EXTENSION = {
-  'application/pdf': 'pdf',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'text/plain': 'txt',
-  'application/msword': 'doc',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/vnd.ms-excel': 'xls',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
-};
-
-const DOCUMENTS_UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'expedientes');
-const DOCUMENTS_PUBLIC_BASE_PATH = '/uploads/expedientes';
 
 function parsePositiveInt(value) {
   const parsed = Number(value);
@@ -239,72 +222,64 @@ function isObjectPlaceholderString(value) {
   return typeof value === 'string' && value.trim() === '[object Object]';
 }
 
-function sanitizeFileName(fileName) {
-  const normalized = String(fileName || '').trim();
-  if (!normalized) {
-    return '';
+async function saveBufferToAzureStorage({ fileBuffer, fileName, mimeType }) {
+  let azureStorage;
+  try {
+    azureStorage = require('../config/azureStorage');
+  } catch (error) {
+    const uploadError = new Error('No se puede usar Azure Blob porque falta la dependencia @azure/storage-blob');
+    uploadError.code = 'AZURE_NOT_AVAILABLE';
+    throw uploadError;
   }
 
-  const safe = normalized
-    .replace(/[/\\]/g, '_')
-    .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
+  if (!azureStorage || typeof azureStorage.isConfigured !== 'function' || !azureStorage.isConfigured()) {
+    const uploadError = new Error('Azure Blob no esta configurado. Revise AZURE_BLOB_SERVICE_SAS_URL y AZURE_STORAGE_CONTAINER_NAME.');
+    uploadError.code = 'AZURE_NOT_CONFIGURED';
+    throw uploadError;
+  }
 
-  return safe || '';
+  try {
+    const resolvedFileName = String(fileName || `documento_${Date.now()}`).trim();
+    const resolvedMimeType = normalizeMimeType(mimeType) || 'application/octet-stream';
+    const uploadedUrl = await azureStorage.uploadFile(fileBuffer, resolvedFileName, resolvedMimeType);
+    return {
+      rutaArchivo: uploadedUrl,
+      tipo: resolvedMimeType,
+      nombreArchivo: resolvedFileName
+    };
+  } catch (error) {
+    const uploadError = new Error(`Error subiendo archivo a Azure Blob: ${error.message}`);
+    uploadError.code = 'AZURE_UPLOAD_ERROR';
+    throw uploadError;
+  }
 }
 
-function getExtensionFromMimeType(mimeType) {
-  const normalized = normalizeMimeType(mimeType);
-  return MIME_TO_EXTENSION[normalized] || '';
-}
-
-async function ensureDocumentsUploadDirectory() {
-  await fs.promises.mkdir(DOCUMENTS_UPLOAD_DIR, { recursive: true });
-}
-
-async function saveBufferToLocalStorage({ fileBuffer, fileName, mimeType }) {
+async function saveBufferToConfiguredStorage({ fileBuffer, fileName, mimeType }) {
   if (!Buffer.isBuffer(fileBuffer) || !fileBuffer.length) {
-    const uploadError = new Error('Archivo invalido para guardar localmente');
+    const uploadError = new Error('El buffer del archivo es invalido');
     uploadError.code = 'VALIDATION_ERROR';
     throw uploadError;
   }
 
-  const normalizedMimeType = normalizeMimeType(mimeType) || 'application/octet-stream';
-  const safeName = sanitizeFileName(fileName || '');
-  const providedExt = safeName.includes('.') ? safeName.split('.').pop().toLowerCase() : '';
-  const defaultExt = getExtensionFromMimeType(normalizedMimeType);
-  const resolvedExt = providedExt || defaultExt || 'bin';
-  const baseName = safeName
-    ? safeName.replace(new RegExp(`\\.${providedExt}$`, 'i'), '')
-    : 'documento';
-  const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${baseName}.${resolvedExt}`;
-
-  await ensureDocumentsUploadDirectory();
-  const absolutePath = path.join(DOCUMENTS_UPLOAD_DIR, uniqueName);
-  await fs.promises.writeFile(absolutePath, fileBuffer);
-
-  return {
-    rutaArchivo: `${DOCUMENTS_PUBLIC_BASE_PATH}/${uniqueName}`,
-    tipo: normalizedMimeType,
-    nombreArchivo: safeName || `documento.${resolvedExt}`
-  };
+  return saveBufferToAzureStorage({ fileBuffer, fileName, mimeType });
 }
 
-async function saveBase64ToLocalStorage({ fileBase64, fileName, mimeType }) {
+async function saveBase64DocumentToAzure({ fileBase64, fileName, mimeType }) {
   const parsed = parseBase64Input(fileBase64);
   if (!parsed) {
-    return null;
+    const uploadError = new Error('El contenido base64 es invalido o no se pudo procesar');
+    uploadError.code = 'VALIDATION_ERROR';
+    throw uploadError;
   }
 
   const buffer = Buffer.from(parsed.base64, 'base64');
   if (!buffer.length) {
-    const uploadError = new Error('fileBase64 es invalido');
+    const uploadError = new Error('fileBase64 es invalido (buffer vacio)');
     uploadError.code = 'VALIDATION_ERROR';
     throw uploadError;
   }
 
-  return saveBufferToLocalStorage({
+  return saveBufferToConfiguredStorage({
     fileBuffer: buffer,
     fileName,
     mimeType: mimeType || parsed.mimeType || 'application/octet-stream'
@@ -318,6 +293,10 @@ function handleError(res, error, fallbackMessage) {
 
   if (error && error.code === 'FORBIDDEN') {
     return res.status(403).json({ error: error.message });
+  }
+
+  if (error && (error.code === 'AZURE_NOT_AVAILABLE' || error.code === 'AZURE_NOT_CONFIGURED' || error.code === 'AZURE_UPLOAD_ERROR')) {
+    return res.status(400).json({ error: error.message });
   }
 
   if (error && error.code === 'ER_NO_REFERENCED_ROW_2') {
@@ -439,9 +418,16 @@ exports.attachDocumento = async (req, res) => {
   try {
     const body = req.body || {};
     const multipartFiles = Array.isArray(req.files) ? req.files : [];
-    const observacionId = parsePositiveInt(req.params.observacionId || req.params.id);
-    if (!observacionId) {
-      return res.status(400).json({ error: 'El id de la observacion es invalido' });
+    const detalleId = parsePositiveInt(
+      req.params.detalleId
+      || req.params.observacionId
+      || req.params.id
+      || body.detalleId
+      || body.detalle_id
+      || body.observacionId
+    );
+    if (!detalleId) {
+      return res.status(400).json({ error: 'El id del detalle del expediente es invalido' });
     }
 
     // Build documents list: real multipart files always take priority over body fields.
@@ -504,7 +490,7 @@ exports.attachDocumento = async (req, res) => {
       let resolvedNombre = getBodyValueFromDocument(docPayload, ['nombreArchivo', 'nombre_archivo', 'fileName', 'filename']);
 
       if (!resolvedRuta && fileBase64) {
-        const uploaded = await saveBase64ToLocalStorage({
+        const uploaded = await saveBase64DocumentToAzure({
           fileBase64,
           fileName: resolvedNombre,
           mimeType: resolvedTipo
@@ -515,7 +501,7 @@ exports.attachDocumento = async (req, res) => {
       }
 
       if (!resolvedRuta && fileBuffer) {
-        const uploaded = await saveBufferToLocalStorage({
+        const uploaded = await saveBufferToConfiguredStorage({
           fileBuffer,
           fileName: resolvedNombre,
           mimeType: resolvedTipo
@@ -546,7 +532,7 @@ exports.attachDocumento = async (req, res) => {
       }
 
       preparedDocuments.push({
-        observacionId,
+        detalleId,
         citaId: parsePositiveInt(pickFirstDefined([
           docPayload.citaId,
           docPayload.cita_id,
@@ -574,5 +560,56 @@ exports.attachDocumento = async (req, res) => {
     });
   } catch (error) {
     return handleError(res, error, 'Error interno adjuntando documento al expediente');
+  }
+};
+
+exports.getDocumentoTemporarySas = async (req, res) => {
+  try {
+    let azureStorage;
+    try {
+      azureStorage = require('../config/azureStorage');
+    } catch (_error) {
+      return res.status(500).json({ error: 'No se pudo cargar la configuracion de Azure Blob' });
+    }
+
+    const url = pickFirstDefined([
+      req.query && req.query.rutaArchivo,
+      req.query && req.query.ruta_archivo,
+      req.query && req.query.url,
+      req.body && req.body.rutaArchivo,
+      req.body && req.body.ruta_archivo,
+      req.body && req.body.url
+    ]);
+
+    if (!url) {
+      return res.status(400).json({
+        error: 'Debe enviar la URL del documento',
+        acceptedFields: ['rutaArchivo', 'ruta_archivo', 'url']
+      });
+    }
+
+    const expiresInMinutesRaw = pickFirstDefined([
+      req.query && req.query.expiresInMinutes,
+      req.query && req.query.expiraEnMinutos,
+      req.body && req.body.expiresInMinutes,
+      req.body && req.body.expiraEnMinutos
+    ]);
+
+    const expiresInMinutes = expiresInMinutesRaw !== undefined
+      ? Math.max(1, Math.min(1440, Number(expiresInMinutesRaw) || 15))
+      : 15;
+
+    const temporary = await azureStorage.generateTemporaryBlobUrl(String(url).trim(), {
+      expiresInMinutes,
+      permissions: 'r'
+    });
+
+    return res.status(200).json({
+      sasUrl: temporary.url,
+      expiresOn: temporary.expiresOn,
+      expiresInMinutes: temporary.expiresInMinutes
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'No se pudo generar el SAS temporal' });
   }
 };

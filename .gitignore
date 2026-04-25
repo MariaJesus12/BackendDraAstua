@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# environment files
+.env
+.env.*
+!.env.example
+
+# build/output
+coverage/
+dist/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
