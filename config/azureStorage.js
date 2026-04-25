@@ -1,3 +1,16 @@
+const nodeCrypto = require('crypto');
+
+// Azure SDK may expect Web Crypto on globalThis in some Node runtimes.
+if (typeof globalThis.crypto === 'undefined') {
+  if (nodeCrypto.webcrypto) {
+    globalThis.crypto = nodeCrypto.webcrypto;
+  }
+}
+
+if (globalThis.crypto && typeof globalThis.crypto.randomUUID !== 'function' && typeof nodeCrypto.randomUUID === 'function') {
+  globalThis.crypto.randomUUID = () => nodeCrypto.randomUUID();
+}
+
 const {
   BlobServiceClient,
   StorageSharedKeyCredential,
