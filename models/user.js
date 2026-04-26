@@ -284,6 +284,34 @@ const User = {
     return this.findById(userId);
   },
 
+  async updatePassword(id, newPassword) {
+    const userId = parsePositiveInt(id);
+    const normalizedNewPassword = normalizeDbValue(newPassword);
+
+    if (!userId) {
+      throw createValidationError('El id del usuario es invalido');
+    }
+
+    if (!normalizedNewPassword) {
+      throw createValidationError('La nueva contraseña es obligatoria');
+    }
+
+    const user = await this.findRawById(userId);
+    if (!user) {
+      return null;
+    }
+
+    const passwordHash = await bcrypt.hash(normalizedNewPassword, 10);
+    await db.query(
+      `UPDATE usuarios
+       SET password = ?
+       WHERE id = ?`,
+      [passwordHash, userId]
+    );
+
+    return true;
+  },
+
   async validatePassword(plainPassword, storedPassword) {
     const plain = normalizeDbValue(plainPassword);
     const stored = normalizeDbValue(storedPassword).trim();

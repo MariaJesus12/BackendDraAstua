@@ -9,6 +9,7 @@ const adminAccess = [authMiddleware, requireRoles(['admin', 'administrador'])];
 
 router.post('/loginUser', userController.login);
 router.get('/getProfile', authMiddleware, userController.getProfile);
+router.post('/change-password', userController.changePassword);
 router.get('/roles', authMiddleware, userController.getRoles);
 router.get('/getRoles', authMiddleware, userController.getRoles);
 router.get('/roles/:id', authMiddleware, userController.getRoleById);

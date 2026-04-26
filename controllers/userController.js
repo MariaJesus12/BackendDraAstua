@@ -208,3 +208,63 @@ exports.deleteUser = async (req, res) => {
     return res.status(500).json({ error: 'Error interno eliminando usuario' });
   }
 };
+
+exports.changePassword = async (req, res) => {
+  try {
+    const identificacion = req.body && req.body.identificacion != null
+      ? String(req.body.identificacion).trim()
+      : '';
+
+    const currentPassword = req.body && req.body.currentPassword != null
+      ? String(req.body.currentPassword)
+      : '';
+    const newPassword = req.body && req.body.newPassword != null
+      ? String(req.body.newPassword)
+      : '';
+    const confirmNewPassword = req.body && req.body.confirmNewPassword != null
+      ? String(req.body.confirmNewPassword)
+      : '';
+
+    if (!identificacion || !currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'identificacion, currentPassword y newPassword son obligatorios' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 8 caracteres' });
+    }
+
+    if (confirmNewPassword && newPassword !== confirmNewPassword) {
+      return res.status(400).json({ error: 'La confirmación de contraseña no coincide' });
+    }
+
+    const user = await User.findByIdentificacion(identificacion);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    if (!user.activo) {
+      return res.status(403).json({ error: 'Usuario inactivo' });
+    }
+
+    const isCurrentPasswordValid = await User.validatePassword(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+    }
+
+    const isSamePassword = await User.validatePassword(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ error: 'La nueva contraseña no puede ser igual a la actual' });
+    }
+
+    await User.updatePassword(user.id, newPassword);
+
+    return res.status(200).json({ message: 'Contraseña actualizada correctamente' });
+  } catch (error) {
+    if (error && error.code === 'VALIDATION_ERROR') {
+      return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+
+    console.error('Error cambiando contraseña:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno cambiando contraseña' });
+  }
+};
