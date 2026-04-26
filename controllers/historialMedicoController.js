@@ -1,11 +1,11 @@
-'use strict';
+﻿'use strict';
 
 const PDFDocument = require('pdfkit');
 const HistorialMedico = require('../models/historialMedico');
 const path = require('path');
 const fs = require('fs');
 
-// ── Brand ────────────────────────────────────────────────────────────────────
+// â”€â”€ Brand â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const BRAND_NAME    = 'Consultorio Dra. Karla Astua';
 const BRAND_TAGLINE = 'Consultorio Medico';
 const LOGO_PATH     = path.join(__dirname, '..', 'assets', 'logo.png');
@@ -33,7 +33,7 @@ const HEADER_H    = 104;
 const CONTENT_TOP = HEADER_H + 4 + 14;
 const FOOTER_Y    = PAGE_H - 30;
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
+// â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function safeText(value, fallback) {
   const fb = fallback !== undefined ? fallback : 'N/A';
   const text = String(value === undefined || value === null ? '' : value).trim();
@@ -78,11 +78,11 @@ function handleError(res, error) {
   if (error && error.code === 'FORBIDDEN')          return res.status(403).json({ error: error.message });
   if (error && error.code === 'ER_NO_SUCH_TABLE')   return res.status(500).json({ error: 'Falta una tabla requerida para generar historial' });
   if (error && error.code === 'ER_BAD_FIELD_ERROR') return res.status(500).json({ error: 'Campo invalido en historial medico' });
-  console.error('Error generando historial medico PDF:', error.message, error.stack);
+  console.error('Error generando historial medico PDF:', error.message, error.stack, JSON.stringify(error));
   return res.status(500).json({ error: 'Error interno generando historial medico en PDF' });
 }
 
-// ── Primitivos de dibujo ──────────────────────────────────────────────────────
+// â”€â”€ Primitivos de dibujo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function fillRect(doc, x, y, w, h, color) {
   doc.save().rect(x, y, w, h).fillColor(color).fill().restore();
 }
@@ -95,7 +95,7 @@ function hLine(doc, y, x1, x2, color, lw) {
   doc.save().moveTo(x1, y).lineTo(x2, y).lineWidth(lw || 0.5).strokeColor(color || C.mid).stroke().restore();
 }
 
-// ── Encabezado de página ──────────────────────────────────────────────────────
+// â”€â”€ Encabezado de pÃ¡gina â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function drawHeader(doc, pageNum) {
   // Banda teal
   fillRect(doc, 0, 0, PAGE_W, HEADER_H, C.primary);
@@ -118,9 +118,9 @@ function drawHeader(doc, pageNum) {
 
   doc.save()
     .fillColor(C.white)
-    .font('Helvetica').fontSize(7.5).characterSpacing(2)
+    .font('Helvetica').fontSize(7.5)
     .text(BRAND_TAGLINE.toUpperCase(), textX, 26, { width: textW, lineBreak: false })
-    .font('Helvetica-Bold').fontSize(18).characterSpacing(0)
+    .font('Helvetica-Bold').fontSize(18)
     .text(BRAND_NAME, textX, 38, { width: textW })
     .font('Helvetica').fontSize(9).fillColor('#C8EFEB')
     .text('Historial Medico del Paciente', textX, 66, { width: textW })
@@ -133,7 +133,7 @@ function drawHeader(doc, pageNum) {
     .restore();
 }
 
-// ── Footer de página ──────────────────────────────────────────────────────────
+// â”€â”€ Footer de pÃ¡gina â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function drawFooter(doc) {
   hLine(doc, FOOTER_Y, MARGIN, PAGE_W - MARGIN, C.mid, 0.5);
   doc.save()
@@ -144,19 +144,19 @@ function drawFooter(doc) {
     .restore();
 }
 
-// ── Etiqueta de sección ───────────────────────────────────────────────────────
+// â”€â”€ Etiqueta de secciÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function drawSectionLabel(doc, title) {
   const y = doc.y;
   fillRect(doc, MARGIN, y, CW, 24, C.light);
   fillRect(doc, MARGIN, y, 4, 24, C.primary);
   doc.save()
-    .fillColor(C.dark).font('Helvetica-Bold').fontSize(9.5).characterSpacing(0.8)
+    .fillColor(C.dark).font('Helvetica-Bold').fontSize(9.5)
     .text(title.toUpperCase(), MARGIN + 14, y + 7, { width: CW - 20 })
     .restore();
   doc.y = y + 24 + 8;
 }
 
-// ── Caja de datos del paciente ────────────────────────────────────────────────
+// â”€â”€ Caja de datos del paciente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function drawPatientBox(doc, paciente, generatedAt) {
   const y     = doc.y;
   const PAD   = 14;
@@ -195,7 +195,7 @@ function drawPatientBox(doc, paciente, generatedAt) {
   doc.y = y + 108 + 12;
 }
 
-// ── Fila de estadísticas ──────────────────────────────────────────────────────
+// â”€â”€ Fila de estadÃ­sticas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function drawStatsRow(doc, expedientes, detalles, documentos) {
   const stats = [
     { value: String(expedientes), label: 'Expedientes' },
@@ -217,7 +217,7 @@ function drawStatsRow(doc, expedientes, detalles, documentos) {
     doc.save()
       .fillColor(C.primary).font('Helvetica-Bold').fontSize(22)
       .text(stats[i].value, bx, y + 10, { width: BOX_W, align: 'center' })
-      .fillColor(C.muted).font('Helvetica').fontSize(7.5).characterSpacing(0.5)
+      .fillColor(C.muted).font('Helvetica').fontSize(7.5)
       .text(stats[i].label.toUpperCase(), bx, y + 36, { width: BOX_W, align: 'center' })
       .restore();
   }
@@ -225,7 +225,7 @@ function drawStatsRow(doc, expedientes, detalles, documentos) {
   doc.y = y + BOX_H + 14;
 }
 
-// ── Card de consulta ──────────────────────────────────────────────────────────
+// â”€â”€ Card de consulta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function drawConsultationCard(doc, detalle, index, onNewPage) {
   if (doc.y > FOOTER_Y - 140) {
     onNewPage();
@@ -238,7 +238,7 @@ function drawConsultationCard(doc, detalle, index, onNewPage) {
   const HDR_H = 28;
   fillRect(doc, cx, cy, CW, HDR_H, C.primary);
 
-  // Badge con número de consulta
+  // Badge con nÃºmero de consulta
   fillRect(doc, cx, cy, 32, HDR_H, C.dark);
   doc.save()
     .fillColor(C.white).font('Helvetica-Bold').fontSize(11)
@@ -266,7 +266,7 @@ function drawConsultationCard(doc, detalle, index, onNewPage) {
 
   // Observaciones
   doc.save()
-    .fillColor(C.muted).font('Helvetica').fontSize(7.5).characterSpacing(0.4)
+    .fillColor(C.muted).font('Helvetica').fontSize(7.5)
     .text('OBSERVACIONES', MARGIN + 10, doc.y)
     .restore();
   doc.moveDown(0.25);
@@ -298,7 +298,7 @@ function drawConsultationCard(doc, detalle, index, onNewPage) {
   const docs = (detalle.documentos || []);
   if (docs.length) {
     doc.save()
-      .fillColor(C.muted).font('Helvetica').fontSize(7.5).characterSpacing(0.4)
+      .fillColor(C.muted).font('Helvetica').fontSize(7.5)
       .text(`DOCUMENTOS ADJUNTOS (${docs.length})`, MARGIN + 10, doc.y)
       .restore();
     doc.moveDown(0.25);
@@ -322,7 +322,7 @@ function drawConsultationCard(doc, detalle, index, onNewPage) {
   doc.y = cardEndY + 10;
 }
 
-// ── Controlador principal ─────────────────────────────────────────────────────
+// â”€â”€ Controlador principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 exports.downloadHistorialMedicoPdfByIdentificacion = async (req, res) => {
   try {
     const doctorId = parseDoctorId(req);
@@ -366,15 +366,15 @@ exports.downloadHistorialMedicoPdfByIdentificacion = async (req, res) => {
 
       newPage();
 
-      // ── Datos del paciente
+      // â”€â”€ Datos del paciente
       drawSectionLabel(doc, 'Datos del Paciente');
       drawPatientBox(doc, data.paciente, new Date());
 
-      // ── Estadísticas
+      // â”€â”€ EstadÃ­sticas
       drawSectionLabel(doc, 'Resumen');
       drawStatsRow(doc, data.totalExpedientes, data.totalDetalles, data.totalDocumentos);
 
-      // ── Consultas
+      // â”€â”€ Consultas
       drawSectionLabel(doc, 'Detalle de Consultas');
 
       if (!data.historial.length) {
@@ -402,3 +402,5 @@ exports.downloadHistorialMedicoPdfByIdentificacion = async (req, res) => {
     return handleError(res, error);
   }
 };
+
+
