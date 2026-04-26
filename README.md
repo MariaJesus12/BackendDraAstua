@@ -9,9 +9,11 @@ Puedes copiar `.env.example` y completar valores reales.
 Variables minimas:
 
 - `PORT`
+- `NODE_ENV`
 - `JWT_SECRET`
-- `DB_NAME=consultoriodraastua`
-- `CORS_ORIGINS=http://localhost:8082,http://localhost:8081`
+- `CORS_ORIGINS` (en produccion debe incluir origen HTTPS del frontend)
+- `TRUST_PROXY=1` (cuando hay proxy inverso, e.g. Traefik)
+- `FORCE_HTTPS=true` (recomendado en produccion)
 
 Para MySQL tienes dos opciones:
 
@@ -27,6 +29,7 @@ npm start
 
 Healthcheck:
 
+- `GET /api/health` (liviano, no depende de login ni DB)
 - `GET /health`
 
 Rutas de usuario:
@@ -229,6 +232,13 @@ Preflight/CORS:
 - `OPTIONS` y `POST` habilitados para frontend web
 - Headers permitidos: `Content-Type`, `Authorization`
 - Endpoint liviano para gateway: `GET /healthz`
+- En produccion se recomienda permitir solo origen HTTPS del frontend en `CORS_ORIGINS`
+
+HTTPS y proxy inverso:
+
+- El backend usa `trust proxy` para leer `x-forwarded-proto`
+- Si `FORCE_HTTPS=true` y llega trafico por HTTP, responde redireccion `308` a HTTPS
+- Se registran logs por request con: metodo, ruta, `origin`, `x-forwarded-proto`, `host`
 
 ## Deploy en Dockploy
 
@@ -237,7 +247,9 @@ Preflight/CORS:
 3. Definir variables en Dockploy:
    - `NODE_ENV=production`
    - `PORT=3000`
-   - `CORS_ORIGINS=http://localhost:8082,http://localhost:8081`
+   - `TRUST_PROXY=1`
+   - `FORCE_HTTPS=true`
+   - `CORS_ORIGINS=https://consultoriodrakarlaastua-consultoriodrak-bdd288-148-113-202-119.traefik.me`
    - `JWT_SECRET=<secreto_fuerte>`
    - `DATABASE_URL=mysql://usuario:password@host:3306/consultoriodraastua`
    - `REQUIRE_DB_ON_START=false` (recomendado para evitar caidas por reconexion DB)

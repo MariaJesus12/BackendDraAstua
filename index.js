@@ -26,6 +26,57 @@ const { expedienteDocumentsUpload } = require('./middlewares/uploadMiddleware');
 dotenv.config();
 
 const app = express();
+const NODE_ENV = String(process.env.NODE_ENV || 'development').toLowerCase();
+const IS_PRODUCTION = NODE_ENV === 'production';
+const FORCE_HTTPS = String(process.env.FORCE_HTTPS || (IS_PRODUCTION ? 'true' : 'false')).toLowerCase() === 'true';
+const TRUST_PROXY = Number(process.env.TRUST_PROXY || 1);
+
+const validateRequiredEnv = () => {
+  const missing = [];
+
+  if (!process.env.JWT_SECRET) {
+    missing.push('JWT_SECRET');
+  }
+
+  const hasDbUrl = Boolean(process.env.DATABASE_URL || process.env.MYSQL_URL);
+  if (!hasDbUrl) {
+    const dbFields = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+    dbFields.forEach((name) => {
+      if (!process.env[name]) {
+        missing.push(name);
+      }
+    });
+  }
+
+  const corsOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (IS_PRODUCTION && corsOrigins.length === 0) {
+    missing.push('CORS_ORIGINS');
+  }
+
+  const invalidCorsOrigins = corsOrigins.filter((origin) => {
+    if (/^https:\/\//i.test(origin)) {
+      return false;
+    }
+    return !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+  });
+
+  if (IS_PRODUCTION && invalidCorsOrigins.length > 0) {
+    throw new Error(
+      `CORS_ORIGINS contiene orígenes no válidos para producción: ${invalidCorsOrigins.join(', ')}`
+    );
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Faltan variables de entorno críticas: ${missing.join(', ')}`);
+  }
+};
+
+validateRequiredEnv();
+
 const db = DbService.getInstance();
 
 const DEFAULT_CORS_ORIGINS = ['http://localhost:8082', 'http://localhost:8081'];
@@ -35,7 +86,42 @@ const configuredOrigins = (process.env.CORS_ORIGINS || '')
   .filter(Boolean);
 const allowedOrigins = configuredOrigins.length ? configuredOrigins : DEFAULT_CORS_ORIGINS;
 const LOCALHOST_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
-const ALLOW_LOCALHOST_ANY_PORT = String(process.env.CORS_ALLOW_LOCALHOST_ANY_PORT || 'true').toLowerCase() === 'true';
+const ALLOW_LOCALHOST_ANY_PORT = String(process.env.CORS_ALLOW_LOCALHOST_ANY_PORT || (IS_PRODUCTION ? 'false' : 'true')).toLowerCase() === 'true';
+
+app.set('trust proxy', TRUST_PROXY);
+
+app.use((req, res, next) => {
+  const origin = req.get('origin') || '-';
+  const forwardedProto = req.get('x-forwarded-proto') || '-';
+  const host = req.get('host') || '-';
+  console.log(
+    `[REQUEST] ${req.method} ${req.originalUrl} origin=${origin} protocol=${req.protocol} x-forwarded-proto=${forwardedProto} host=${host}`
+  );
+  next();
+});
+
+app.use((req, res, next) => {
+  if (!FORCE_HTTPS) {
+    return next();
+  }
+
+  const forwardedProto = String(req.get('x-forwarded-proto') || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const isHttps = req.secure || forwardedProto === 'https';
+
+  if (isHttps) {
+    return next();
+  }
+
+  const host = req.get('host');
+  if (!host) {
+    return res.status(400).json({ error: 'Host no disponible para redirección HTTPS' });
+  }
+
+  return res.redirect(308, `https://${host}${req.originalUrl}`);
+});
 
 const isAllowedOrigin = (origin) => {
   if (!origin) {
@@ -80,6 +166,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json());
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
 
 app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'ok' });
@@ -168,7 +262,8 @@ const REQUIRE_DB_ON_START = String(process.env.REQUIRE_DB_ON_START || 'false').t
 
 async function startServer() {
   app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`API ejecutandose en http://0.0.0.0:${PORT}`);
+    console.log(`API ejecutandose en 0.0.0.0:${PORT}`);
+    console.log(`trust proxy=${TRUST_PROXY} | force https=${FORCE_HTTPS}`);
 
     const dbOk = await db.testConnection();
     if (!dbOk) {
