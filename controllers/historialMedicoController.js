@@ -31,6 +31,7 @@ const MARGIN      = 45;
 const CW          = PAGE_W - MARGIN * 2;
 const HEADER_H    = 104;
 const CONTENT_TOP = HEADER_H + 4 + 14;
+const FOOTER_Y    = PAGE_H - 30;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function safeText(value, fallback) {
