@@ -111,3 +111,100 @@ exports.getRoleById = async (req, res) => {
     return res.status(500).json({ error: 'Error interno obteniendo rol por id' });
   }
 };
+
+exports.listUsers = async (req, res) => {
+  try {
+    const users = await User.findAll();
+    return res.status(200).json({ users: users.map((user) => User.toSafeUser(user)) });
+  } catch (error) {
+    console.error('Error listando usuarios:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno listando usuarios' });
+  }
+};
+
+exports.getUserById = async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'El id del usuario es invalido' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    return res.status(200).json({ user: User.toSafeUser(user) });
+  } catch (error) {
+    console.error('Error obteniendo usuario:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno obteniendo usuario' });
+  }
+};
+
+exports.createUser = async (req, res) => {
+  try {
+    const user = await User.create(req.body || {});
+    return res.status(201).json({ user: User.toSafeUser(user) });
+  } catch (error) {
+    if (error && error.code === 'VALIDATION_ERROR') {
+      return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+
+    console.error('Error creando usuario:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno creando usuario' });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'El id del usuario es invalido' });
+    }
+
+    const user = await User.update(id, req.body || {});
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    return res.status(200).json({ user: User.toSafeUser(user) });
+  } catch (error) {
+    if (error && error.code === 'VALIDATION_ERROR') {
+      return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+
+    console.error('Error actualizando usuario:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno actualizando usuario' });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'El id del usuario es invalido' });
+    }
+
+    const authenticatedUserId = parseId(req.user && req.user.id);
+    if (authenticatedUserId && authenticatedUserId === id) {
+      return res.status(400).json({ error: 'No puede desactivar su propio usuario desde esta ruta' });
+    }
+
+    const user = await User.softDelete(id);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    return res.status(200).json({
+      message: 'Usuario desactivado correctamente',
+      user: User.toSafeUser(user)
+    });
+  } catch (error) {
+    if (error && error.code === 'VALIDATION_ERROR') {
+      return res.status(error.statusCode || 400).json({ error: error.message });
+    }
+
+    console.error('Error eliminando usuario:', error.message, error.stack);
+    return res.status(500).json({ error: 'Error interno eliminando usuario' });
+  }
+};
