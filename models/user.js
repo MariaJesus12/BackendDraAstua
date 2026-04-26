@@ -83,9 +83,17 @@ const User = {
   async findByIdentificacion(identificacion) {
     const normalizedIdentificacion = normalizeDbValue(identificacion).trim();
     const rows = await db.query(
-      `SELECT id, nombre, email, password, rol_id, activo, identificacion
-       FROM usuarios
-       WHERE identificacion = ?
+      `SELECT u.id,
+              u.nombre,
+              u.email,
+              u.password,
+              u.rol_id,
+              r.nombre AS rol_nombre,
+              u.activo,
+              u.identificacion
+       FROM usuarios u
+       LEFT JOIN roles r ON r.id = u.rol_id
+       WHERE u.identificacion = ?
        LIMIT 1`,
       [normalizedIdentificacion]
     );
@@ -308,6 +316,13 @@ const User = {
       email: userRow.email,
       rol_id: userRow.rol_id,
       rol_nombre: userRow.rol_nombre,
+      roleId: userRow.rol_id,
+      roleName: userRow.rol_nombre,
+      role: {
+        id: userRow.rol_id,
+        nombre: userRow.rol_nombre,
+        name: userRow.rol_nombre
+      },
       identificacion: userRow.identificacion,
       activo: Boolean(userRow.activo)
     };
