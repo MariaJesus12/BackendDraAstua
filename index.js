@@ -23,12 +23,13 @@ const expedienteController = require('./controllers/expedienteController');
 const historialMedicoController = require('./controllers/historialMedicoController');
 const { expedienteDocumentsUpload } = require('./middlewares/uploadMiddleware');
 
+
 dotenv.config();
 
 const app = express();
 const NODE_ENV = String(process.env.NODE_ENV || 'development').toLowerCase();
 const IS_PRODUCTION = NODE_ENV === 'production';
-const FORCE_HTTPS = String(process.env.FORCE_HTTPS || (IS_PRODUCTION ? 'true' : 'false')).toLowerCase() === 'true';
+const FORCE_HTTPS = false; // Forzar HTTP siempre
 const TRUST_PROXY = Number(process.env.TRUST_PROXY || 1);
 
 const validateRequiredEnv = () => {
@@ -100,28 +101,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use((req, res, next) => {
-  if (!FORCE_HTTPS) {
-    return next();
-  }
 
-  const forwardedProto = String(req.get('x-forwarded-proto') || '')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  const isHttps = req.secure || forwardedProto === 'https';
-
-  if (isHttps) {
-    return next();
-  }
-
-  const host = req.get('host');
-  if (!host) {
-    return res.status(400).json({ error: 'Host no disponible para redirección HTTPS' });
-  }
-
-  return res.redirect(308, `https://${host}${req.originalUrl}`);
-});
+// Eliminada la redirección a HTTPS: solo HTTP
 
 const isAllowedOrigin = (origin) => {
   if (!origin) {
