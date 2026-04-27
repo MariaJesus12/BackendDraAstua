@@ -59,10 +59,35 @@ const validateRequiredEnv = () => {
   }
 
   const invalidCorsOrigins = corsOrigins.filter((origin) => {
-    if (/^https:\/\//i.test(origin)) {
+    try {
+      const url = new URL(origin);
+
+      // ✔ En producción: permitir https siempre
+      if (IS_PRODUCTION) {
+        // permitir https
+        if (url.protocol === 'https:') return false;
+
+        // permitir http SOLO si es localhost
+        if (
+          url.protocol === 'http:' &&
+          (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+        ) {
+          return false;
+        }
+
+        // 🚨 opcional: permitir dominios internos tipo traefik
+        if (url.hostname.endsWith('.traefik.me')) {
+          return false;
+        }
+
+        return true;
+      }
+
+      // ✔ En desarrollo permitir todo válido
       return false;
+    } catch (err) {
+      return true; // URL inválida
     }
-    return !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
   });
 
   if (IS_PRODUCTION && invalidCorsOrigins.length > 0) {
