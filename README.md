@@ -249,9 +249,11 @@ HTTPS y proxy inverso:
    - `PORT=3000`
    - `TRUST_PROXY=1`
    - `FORCE_HTTPS=true`
-   - `CORS_ORIGINS=https://consultoriodrakarlaastua-consultoriodrak-bdd288-148-113-202-119.traefik.me`
+   - `CORS_ORIGINS=https://mooncodestudio.uk`
    - `JWT_SECRET=<secreto_fuerte>`
    - `DATABASE_URL=mysql://usuario:password@host:3306/consultoriodraastua`
+
+   El archivo `.env` no se copia a la imagen Docker (está incluido en `.dockerignore`). En Dockploy estas variables deben configurarse también en **Environment Variables** y luego redeplegar el servicio. Para este dominio, `CORS_ORIGINS` debe ser exactamente `https://mooncodestudio.uk`, sin `/` final. La URL pública del backend (`https://api.mooncodestudio.uk`) se configura en el dominio del servicio de Dockploy, no en `DATABASE_URL`.
    - `REQUIRE_DB_ON_START=false` (recomendado para evitar caidas por reconexion DB)
 4. Exponer puerto `3000`.
 5. Verificar `GET /health` despues del deploy.

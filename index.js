@@ -173,6 +173,18 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json());
 
+const apiStatus = (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'Backend Dra Astua',
+    health: '/api/health'
+  });
+};
+
+// Permite verificar el dominio desde el navegador sin recibir un 404.
+app.get('/', apiStatus);
+app.get('/api', apiStatus);
+
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
