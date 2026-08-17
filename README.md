@@ -249,7 +249,7 @@ HTTPS y proxy inverso:
    - `PORT=3000`
    - `TRUST_PROXY=1`
    - `FORCE_HTTPS=true`
-   - `CORS_ORIGINS=https://mooncodestudio.uk`
+   - `CORS_ORIGINS=https://consultoriodrakarlaastua.com`
    - `JWT_SECRET=<secreto_fuerte>`
    - `DATABASE_URL=mysql://usuario:password@host:3306/consultoriodraastua`
 
